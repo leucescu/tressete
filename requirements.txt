@@ -1,0 +1,5 @@
+torch
+numpy
+wandb
+matplotlib        # Optional: for training curves, debugging
+#rich              # Optional: for colorful CLI output
