@@ -1,5 +1,6 @@
 torch
 numpy
 wandb
+pytest
 matplotlib        # Optional: for training curves, debugging
 #rich              # Optional: for colorful CLI output

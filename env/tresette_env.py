@@ -1,3 +1,4 @@
+import math
 import random
 from typing import List
 
@@ -20,7 +21,7 @@ RANK_ORDER = {
 POINT_PER_RANK = {
     '3': 1/3,
     '2': 1/3,
-    '1': 8,
+    '1': 1,
     '13': 1/3,
     '12': 1/3,
     '11': 1/3,
@@ -84,7 +85,7 @@ class Player:
         card = self.hand.pop(index)
 
         if card in self.known_cards:
-            # The firs match is removed
+            # The first match is removed
             self.known_cards.remove(card)
 
         return card
@@ -115,6 +116,8 @@ class Player:
             pts = trick_card.point_value
             self.num_pts += pts
 
+    def update_points_at_the_end(self, bonus_points):
+        self.num_pts += bonus_points
 
 class TresetteEnv:
     def __init__(self, num_players=2, initial_hand_size=10):
@@ -133,6 +136,7 @@ class TresetteEnv:
         self.current_player = 0
         self.trick = []  # list of tuples (player_id, card)
         self.done = False
+        self.final_trick_winner = None
         return self._get_obs()
 
     def _get_obs(self):
@@ -145,6 +149,7 @@ class TresetteEnv:
             "cards_left_in_deck": len(self.deck.cards)
         }
 
+    # Examine this again if it is right
     def step(self, action_idx):
         if self.done:
             raise Exception("Game over. Call reset().")
@@ -160,6 +165,7 @@ class TresetteEnv:
         # Next player
         self.current_player = (self.current_player + 1) % self.num_players
 
+        # Not utilized yet
         reward = 0
         info = {}
 
@@ -176,17 +182,26 @@ class TresetteEnv:
                 draw_player_idx = (winner + i) % self.num_players
                 self.players[draw_player_idx].draw_card(self.deck)
 
+                if all(len(p.hand) == 0 for p in self.players):
+                    self.final_trick_winner = winner
+    
         # Check if game done (no cards in hands and deck empty)
         hands_empty = all(len(p.hand) == 0 for p in self.players)
         deck_empty = len(self.deck.cards) == 0
         self.done = hands_empty and deck_empty
+
+        if self.done:
+            bonus_points = 11.0
+            for player in self.players:
+                bonus_points -= player.num_pts
+            self.players[winner].update_points_at_the_end(bonus_points)
 
         return self._get_obs(), reward, self.done, info
 
     def _resolve_trick(self):
         lead_suit = self.trick[0][1].suit
         lead_cards = [(pid, card) for pid, card in self.trick if card.suit == lead_suit]
-        winner, winning_card = max(lead_cards, key=lambda x: x[1].value())
+        winner, _ = max(lead_cards, key=lambda x: x[1].value())
         return winner
 
     def get_valid_actions(self):
