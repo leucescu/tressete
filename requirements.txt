@@ -2,5 +2,7 @@ torch
 numpy
 wandb
 pytest
+gym
+stable_baselines3
 matplotlib        # Optional: for training curves, debugging
 #rich              # Optional: for colorful CLI output

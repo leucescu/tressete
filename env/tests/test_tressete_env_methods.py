@@ -26,7 +26,7 @@ class TestTresetteEnv(unittest.TestCase):
         while not self.env.done:
             valid_actions = self.env.get_valid_actions()
             action = random.choice(valid_actions)
-            _, _, _, _ = self.env.step(action)
+            _, _= self.env.step(action)
             turns += 1
 
         # After the game ends:
@@ -40,7 +40,7 @@ class TestTresetteEnv(unittest.TestCase):
         while not self.env.done:
             valid_actions = self.env.get_valid_actions()
             action = random.choice(valid_actions)
-            _, _, _, _ = self.env.step(action)
+            _, _ = self.env.step(action)
 
         total_points = sum(p.num_pts for p in self.env.players)
         self.assertAlmostEqual(total_points, 11)
@@ -50,7 +50,7 @@ class TestTresetteEnv(unittest.TestCase):
         for _ in range(10):
             valid_actions = self.env.get_valid_actions()
             action = random.choice(valid_actions)
-            _, _, _, _ = self.env.step(action)
+            _, _ = self.env.step(action)
 
         first_value = len(self.env.players[0].hand)
         for player in self.env.players:
@@ -101,7 +101,7 @@ class TestTresetteEnv(unittest.TestCase):
         while not self.env.done:
             valid_actions = self.env.get_valid_actions()
             action = random.choice(valid_actions)
-            _, _, _, _ = self.env.step(action)
+            _, _ = self.env.step(action)
         for player in self.env.players:
             self.assertEqual(len(player.hand), 0)
 

@@ -70,6 +70,9 @@ class Deck:
             hands.append(hand)
         return hands
 
+    def cards_left(self):
+        return len(self.cards)
+
 class Player:
     def __init__(self, player_id):
         self.id = player_id
@@ -77,6 +80,7 @@ class Player:
         self.won_cards = []
         self.known_cards = []
         self.num_pts = 0.0 
+        self.last_trick_pts = 0.0
 
     def receive_cards(self, cards):
         self.hand = cards
@@ -112,9 +116,11 @@ class Player:
         return list(range(len(self.hand)))
     
     def update_points_value(self, trick_cards: List[Card]):
+        self.last_trick_pts = 0.0
         for trick_card in trick_cards:
             pts = trick_card.point_value
             self.num_pts += pts
+            self.last_trick_pts += pts 
 
     def update_points_at_the_end(self, bonus_points):
         self.num_pts += bonus_points
@@ -142,11 +148,17 @@ class TresetteEnv:
     def _get_obs(self):
         current_hand = self.players[self.current_player].hand
         trick_cards = [card for _, card in self.trick]
+
+        other_known_cards = []
+        for player in self.players:
+            other_known_cards.extend(player.known_cards)
+
         return {
             "hand": current_hand,
             "trick": trick_cards,
             "current_player": self.current_player,
-            "cards_left_in_deck": len(self.deck.cards)
+            "cards_left_in_deck": len(self.deck.cards),
+            "other_players_known_cards": other_known_cards
         }
 
     # Examine this again if it is right
@@ -166,8 +178,7 @@ class TresetteEnv:
         self.current_player = (self.current_player + 1) % self.num_players
 
         # Not utilized yet
-        reward = 0
-        info = {}
+        # info = {}
 
         # Trick complete
         if len(self.trick) == self.num_players:
@@ -196,7 +207,7 @@ class TresetteEnv:
                 bonus_points -= player.num_pts
             self.players[winner].update_points_at_the_end(bonus_points)
 
-        return self._get_obs(), reward, self.done, info
+        return self._get_obs(), self.done
 
     def _resolve_trick(self):
         lead_suit = self.trick[0][1].suit
@@ -208,3 +219,6 @@ class TresetteEnv:
         player = self.players[self.current_player]
         lead_suit = self.trick[0][1].suit if self.trick else None
         return player.get_valid_moves(lead_suit)
+    
+    def get_reward_value(self):
+        pass

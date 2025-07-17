@@ -61,7 +61,7 @@ def play_game():
         action_idx = policy.get_action_index(player, lead_suit, trick)
         chosen_card = player.hand[action_idx]
         print(f"Player {current_player} plays: {chosen_card}")
-        obs, reward, done, info = env.step(action_idx)
+        _, _,  = env.step(action_idx)
 
         if len(env.trick) == 0:
             print_trick(env.trick)
