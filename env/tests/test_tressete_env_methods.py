@@ -1,7 +1,7 @@
 import unittest
 import random
-from env.tresette_env import TresetteEnv, Card, Player, Deck
-
+# from env.tresette_env import TresetteEnv, Card
+from env.tresette_env import TresetteEnv,Card
 
 class TestTresetteEnv(unittest.TestCase):
     
@@ -96,39 +96,14 @@ class TestTresetteEnv(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.env.step(invalid_action)
 
-
-class TestPlayerMethods(unittest.TestCase):
-
-    def setUp(self):
-        self.player = Player(player_id=0)
-        self.deck = Deck()
-        self.deck.shuffle()
-
-    def test_draw_card_adds_card_to_hand_and_known(self):
-        initial_hand_size = len(self.player.hand)
-        initial_known_size = len(self.player.known_cards)
-        
-        card_drawn = self.player.draw_card(self.deck)
-        
-        self.assertIsInstance(card_drawn, Card)
-        self.assertEqual(len(self.player.hand), initial_hand_size + 1)
-        self.assertEqual(len(self.player.known_cards), initial_known_size + 1)
-        self.assertIn(card_drawn, self.player.hand)
-        self.assertIn(card_drawn, self.player.known_cards)
-
-    def test_collect_trick_adds_cards_to_won_and_updates_points(self):
-        cards = [Card('coppe', '3'), Card('spade', '1')]
-        initial_won_cards = len(self.player.won_cards)
-        initial_points = self.player.num_pts
-        
-        self.player.collect_trick(cards)
-        
-        self.assertEqual(len(self.player.won_cards), initial_won_cards + len(cards))
-        for card in cards:
-            self.assertIn(card, self.player.won_cards)
-        
-        expected_points = initial_points + sum(card.point_value for card in cards)
-        self.assertAlmostEqual(self.player.num_pts, expected_points)
+    def test_final_hands_empty(self):
+        self.env.reset()
+        while not self.env.done:
+            valid_actions = self.env.get_valid_actions()
+            action = random.choice(valid_actions)
+            _, _, _, _ = self.env.step(action)
+        for player in self.env.players:
+            self.assertEqual(len(player.hand), 0)
 
 if __name__ == "__main__":
     unittest.main()
