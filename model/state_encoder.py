@@ -20,7 +20,7 @@ def encode_state(obs, player, num_players=2):
         state[40 + idx] = 1.0
 
     # 3. Known cards of others (40-dim)
-    for card in obs['other_known_cards']:
+    for card in obs['other_players_known_cards']:
         idx = card_to_index(card)
         state[80 + idx] = 1.0
 

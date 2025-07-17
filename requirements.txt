@@ -4,5 +4,7 @@ wandb
 pytest
 gym
 stable_baselines3
-matplotlib        # Optional: for training curves, debugging
+tensorboard
+matplotlib
+shimmy>=2.0
 #rich              # Optional: for colorful CLI output

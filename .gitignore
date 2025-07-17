@@ -1,1 +1,14 @@
 venv/
+wandb/
+checkpoints/
+logs/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# PyTorch or model checkpoints
+checkpoints/
+*.pt
+*.pth
+*.zip
