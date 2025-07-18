@@ -8,7 +8,9 @@ class AttentionMLP(nn.Module):
         self.fc = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim)  # Output a feature vector, not logits
+            nn.Linear(hidden_dim, hidden_dim),  # Added extra hidden layer
+            nn.ReLU(),
+            nn.Linear(hidden_dim, output_dim)  # Output feature vector
         )
 
     def forward(self, x):
@@ -16,4 +18,4 @@ class AttentionMLP(nn.Module):
         x = x.unsqueeze(1)  # (batch, seq_len=1, hidden)
         attn_output, _ = self.attn(x, x, x)
         x = attn_output.squeeze(1)
-        return self.fc(x)  # Feature vector
+        return self.fc(x)

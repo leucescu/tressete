@@ -1,3 +1,4 @@
+import math
 import torch
 import wandb
 from stable_baselines3 import PPO
@@ -8,91 +9,99 @@ from model.gym_wrapper import TresetteGymWrapper
 from model.model import AttentionMLP
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
-# Wrapper function with cloned opponent injection
-def make_env(opponent_model=None, device='cpu'):
+# Wrapper for environment creation
+def make_env(opponent_model=None, use_heuristic=False, device='cpu'):
     def _init():
-        return TresetteGymWrapper(opponent_model=opponent_model, device=device)
+        return TresetteGymWrapper(
+            opponent_model=None if use_heuristic else opponent_model,
+            opponent_policy="heuristic" if use_heuristic else None,
+            device=device
+        )
     return _init
 
-# Custom features extractor using your AttentionMLP
+
+# Custom feature extractor using your attention-based MLP
 class CustomMLPExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=256):
         super().__init__(observation_space, features_dim)
-        self.model = AttentionMLP(input_dim=observation_space.shape[0], hidden_dim=256, output_dim=features_dim)
+        self.model = AttentionMLP(
+            input_dim=observation_space.shape[0],
+            hidden_dim=256,
+            output_dim=features_dim
+        )
 
     def forward(self, x):
         return self.model(x)
 
-# Linear learning rate schedule
-def linear_schedule(initial_value):
-    def func(progress_remaining):
-        return progress_remaining * initial_value
-    return func
+def exp_decay_schedule(initial_value, decay_rate=0.99, min_lr=1e-5):
+    def scheduler(progress_remaining):
+        current_step = 1 - progress_remaining
+        lr = initial_value * (decay_rate ** (current_step * 100))
+        return max(min_lr, lr)
+    return scheduler
 
 def main():
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
     print(f"Using device: {device}")
 
-    # Initialize Wandb for experiment tracking, logs will sync with tensorboard
     wandb.init(project="tresette-agent", sync_tensorboard=True)
 
-    # Start environment with no opponent model (random behavior initially)
-    env = DummyVecEnv([make_env(None, device)])
+    total_timesteps = 3_000_000
+    initial_lr = 3e-4
+    decay_rate = 0.995  # tweak this for slower or faster decay
+    min_lr = 1e-5
 
-    # Logger configuration for stable_baselines3
     new_logger = configure("logs", ["stdout", "csv", "tensorboard"])
-
-    # Define the policy network with your custom Attention MLP extractor
     policy_kwargs = dict(
         features_extractor_class=CustomMLPExtractor,
         features_extractor_kwargs=dict(features_dim=256),
         net_arch=[dict(pi=[256, 256], vf=[256, 256])]
-
     )
 
-    initial_lr = 3e-4  # Initial learning rate
-
-    # Create PPO model, set device to CUDA if available, and apply learning rate schedule
     model = PPO(
         'MlpPolicy',
-        env,
+        DummyVecEnv([make_env(use_heuristic=True, device=device)]),  # heuristic start
         policy_kwargs=policy_kwargs,
         verbose=1,
         tensorboard_log='./runs/tresette',
         device=device,
-        learning_rate=linear_schedule(initial_lr)
+        learning_rate=exp_decay_schedule(initial_lr, decay_rate, min_lr),
+        ent_coef=0.01,
+        vf_coef=1.0
     )
     model.set_logger(new_logger)
 
-    # Checkpoint callback to save every 10,000 steps
     checkpoint_callback = CheckpointCallback(save_freq=10_000, save_path='./checkpoints/')
 
-    total_timesteps = 300_000
-    clone_interval = 50_000  # Clone opponent every 50k timesteps
+    clone_interval = 50_000
+    heuristic_cutoff = 50_000
     current_timesteps = 0
-    opponent_model = None  # No opponent at start (random)
+    opponent_model = None
+    use_heuristic = True
 
     while current_timesteps < total_timesteps:
         next_timesteps = min(current_timesteps + clone_interval, total_timesteps)
 
-        # Train for clone_interval steps with checkpoint saving
-        model.learn(total_timesteps=clone_interval, reset_num_timesteps=False, callback=checkpoint_callback)
-        current_timesteps = next_timesteps
-
-        # Save current model for cloning
-        model.save("tresette_agent_clone")
-
-        # Load cloned model for opponent after first interval
-        if current_timesteps >= clone_interval:
+        # Switch to self-play after 1M
+        if current_timesteps >= heuristic_cutoff and use_heuristic:
+            use_heuristic = False
             opponent_model = PPO.load("tresette_agent_clone", device=device)
 
-        # Close old env and recreate with new cloned opponent
-        env.close()
-        env = DummyVecEnv([make_env(opponent_model, device)])
-        model.set_env(env)
+        model.learn(
+            total_timesteps=clone_interval,
+            reset_num_timesteps=False,
+            callback=checkpoint_callback
+        )
+        current_timesteps = next_timesteps
 
-    # Final save
+        model.save("tresette_agent_clone")
+
+        env = DummyVecEnv([make_env(opponent_model, use_heuristic, device)])
+        model.set_env(env)
+        env.close()
+
     model.save("tresette_agent_final")
+
 
 if __name__ == "__main__":
     main()

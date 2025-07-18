@@ -76,11 +76,17 @@ class Deck:
 class Player:
     def __init__(self, player_id):
         self.id = player_id
+        self.reset()
+
+    def reset(self):
         self.hand = []
         self.won_cards = []
         self.known_cards = []
-        self.num_pts = 0.0 
+        self.num_pts = 0.0
         self.last_trick_pts = 0.0
+
+    # rest unchanged...
+
 
     def receive_cards(self, cards):
         self.hand = cards
@@ -138,13 +144,89 @@ class TresetteEnv:
         self.deck.shuffle()
         hands = self.deck.deal(self.num_players, self.initial_hand_size)
         for i, player in enumerate(self.players):
+            player.reset()
             player.receive_cards(hands[i])
+
         self.current_player = 0
-        self.trick = []  # list of tuples (player_id, card)
+        self.trick = []
         self.done = False
         self.final_trick_winner = None
+
+        # Keep track of points per trick to avoid double counting
+        self.points_accumulated = 0.0
+
         return self._get_obs()
 
+    def step(self, action_idx):
+        if self.done:
+            raise Exception("Game over. Call reset().")
+
+        player = self.players[self.current_player]
+        lead_suit = self.trick[0][1].suit if self.trick else None
+        valid_actions = player.get_valid_moves(lead_suit)
+        if action_idx not in valid_actions:
+            raise ValueError(f"Invalid action {action_idx}. Valid actions: {valid_actions}")
+
+        played_card = player.play_card(action_idx)
+        self.trick.append((self.current_player, played_card))
+
+        # Next player
+        self.current_player = (self.current_player + 1) % self.num_players
+
+        # Trick complete
+        if len(self.trick) == self.num_players:
+            winner = self._resolve_trick()
+            trick_cards = [card for _, card in self.trick]
+
+            # Calculate trick points separately and add only once
+            trick_points = sum(card.point_value for card in trick_cards)
+
+            self.players[winner].collect_trick(trick_cards)
+            self.points_accumulated += trick_points
+
+            # Set last_trick_pts for winner for reward use
+            for player in self.players:
+                player.last_trick_pts = 0.0
+            self.players[winner].last_trick_pts = trick_points
+
+            self.trick = []
+            self.current_player = winner
+
+        # Check done condition
+        hands_empty = all(len(p.hand) == 0 for p in self.players)
+        deck_empty = len(self.deck.cards) == 0
+        self.done = hands_empty and deck_empty
+
+        if self.done:
+            # Calculate total points before bonus
+            total_points = sum(p.num_pts for p in self.players)
+
+            # Bonus points to assign so total points add to 11
+            bonus_points = 11.0 - total_points
+
+            # Defensive check (should rarely happen if logic is correct)
+            if bonus_points < 0:
+                bonus_points = 0.0
+
+            self.players[winner].update_points_at_the_end(bonus_points)
+
+            # Reset last trick pts since game ended
+            for player in self.players:
+                player.last_trick_pts = 0.0
+
+        return self._get_obs(), self.done
+
+    def _resolve_trick(self):
+        lead_suit = self.trick[0][1].suit
+        lead_cards = [(pid, card) for pid, card in self.trick if card.suit == lead_suit]
+        winner, _ = max(lead_cards, key=lambda x: x[1].value())
+        return winner
+
+    def get_valid_actions(self):
+        player = self.players[self.current_player]
+        lead_suit = self.trick[0][1].suit if self.trick else None
+        return player.get_valid_moves(lead_suit)
+    
     def _get_obs(self):
         current_hand = self.players[self.current_player].hand
         trick_cards = [card for _, card in self.trick]
@@ -161,64 +243,3 @@ class TresetteEnv:
             "other_players_known_cards": other_known_cards
         }
 
-    # Examine this again if it is right
-    def step(self, action_idx):
-        if self.done:
-            raise Exception("Game over. Call reset().")
-
-        player = self.players[self.current_player]
-        valid_actions = player.get_valid_moves(self.trick[0][1].suit if self.trick else None)
-        if action_idx not in valid_actions:
-            raise ValueError(f"Invalid action {action_idx}. Valid actions: {valid_actions}")
-
-        played_card = player.play_card(action_idx)
-        self.trick.append((self.current_player, played_card))
-
-        # Next player
-        self.current_player = (self.current_player + 1) % self.num_players
-
-        # Not utilized yet
-        # info = {}
-
-        # Trick complete
-        if len(self.trick) == self.num_players:
-            winner = self._resolve_trick()
-            trick_cards = [card for _, card in self.trick]
-            self.players[winner].collect_trick(trick_cards)  # Add won cards to winner
-            self.trick = []
-            self.current_player = winner
-
-            # Draw phase: winner draws first
-            for i in range(self.num_players):
-                draw_player_idx = (winner + i) % self.num_players
-                self.players[draw_player_idx].draw_card(self.deck)
-
-                if all(len(p.hand) == 0 for p in self.players):
-                    self.final_trick_winner = winner
-    
-        # Check if game done (no cards in hands and deck empty)
-        hands_empty = all(len(p.hand) == 0 for p in self.players)
-        deck_empty = len(self.deck.cards) == 0
-        self.done = hands_empty and deck_empty
-
-        if self.done:
-            bonus_points = 11.0
-            for player in self.players:
-                bonus_points -= player.num_pts
-            self.players[winner].update_points_at_the_end(bonus_points)
-
-        return self._get_obs(), self.done
-
-    def _resolve_trick(self):
-        lead_suit = self.trick[0][1].suit
-        lead_cards = [(pid, card) for pid, card in self.trick if card.suit == lead_suit]
-        winner, _ = max(lead_cards, key=lambda x: x[1].value())
-        return winner
-
-    def get_valid_actions(self):
-        player = self.players[self.current_player]
-        lead_suit = self.trick[0][1].suit if self.trick else None
-        return player.get_valid_moves(lead_suit)
-    
-    def get_reward_value(self):
-        pass
