@@ -1,5 +1,5 @@
 import unittest
-from env.tresette_env import Card, Player, Deck
+from env.tresette_engine import Card, Player, Deck
 
 
 class TestPlayer(unittest.TestCase):

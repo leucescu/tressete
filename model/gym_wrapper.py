@@ -2,14 +2,14 @@ import gym
 import wandb
 import numpy as np
 from gym import spaces
-from env.tresette_env import TresetteEnv
+from env.tresette_engine import TresetteEngine
 from model.state_encoder import encode_state
 from env.baseline_policies import SimpleHeuristicPolicy
 
 class TresetteGymWrapper(gym.Env):
     def __init__(self, opponent_model=None, opponent_policy=None, device='cpu'):
         super().__init__()
-        self.env = TresetteEnv()
+        self.env = TresetteEngine()
         self.agent_index = 0
         self.opponent_model = opponent_model
         self.opponent_policy = opponent_policy  # "heuristic", "random", or None

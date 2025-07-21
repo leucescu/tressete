@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import random
 from typing import List, Optional
 
-from env.tresette_env import Player, Card
+from env.tresette_engine import Player, Card
 
 class BaselinePolicy(ABC):
     @abstractmethod

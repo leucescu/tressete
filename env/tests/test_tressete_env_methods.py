@@ -1,12 +1,11 @@
 import unittest
 import random
-# from env.tresette_env import TresetteEnv, Card
-from env.tresette_env import TresetteEnv,Card
+from env.tresette_engine import TresetteEngine, Card
 
-class TestTresetteEnv(unittest.TestCase):
+class TestTresetteEngine(unittest.TestCase):
     
     def setUp(self):
-        self.env = TresetteEnv(num_players=2, initial_hand_size=10)
+        self.env = TresetteEngine(num_players=2, initial_hand_size=10)
 
     def test_reset_environment(self):
         obs = self.env.reset()

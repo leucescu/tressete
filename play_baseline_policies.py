@@ -1,5 +1,5 @@
 import sys
-from env.tresette_env import TresetteEnv
+from env.tresette_engine import TresetteEngine
 from env.baseline_policies import (
     RandomPolicy,
     HighestLeadSuitPolicy,
@@ -48,7 +48,7 @@ def play_game():
     # Select policy instances
     policies = [select_policy(pid) for pid in range(num_players)]
 
-    env = TresetteEnv(num_players=num_players)
+    env = TresetteEngine(num_players=num_players)
     obs = env.reset()
 
     while not env.done:

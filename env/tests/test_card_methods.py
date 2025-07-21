@@ -1,5 +1,5 @@
 import unittest
-from env.tresette_env import Card
+from env.tresette_engine import Card
 
 class TestCard(unittest.TestCase):
 

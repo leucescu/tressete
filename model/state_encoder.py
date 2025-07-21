@@ -1,5 +1,5 @@
 import numpy as np
-from env.tresette_env import SUITS, RANKS
+from env.tresette_engine import SUITS, RANKS
 
 # Converter used to convert a card represetation to one hot encoding vector index
 def card_to_index(card):

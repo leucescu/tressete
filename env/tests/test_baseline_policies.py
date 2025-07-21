@@ -1,5 +1,5 @@
 import unittest
-from env.tresette_env import Player, Card
+from env.tresette_engine import Player, Card
 from env.baseline_policies import (
     RandomPolicy,
     HighestLeadSuitPolicy,
