@@ -46,37 +46,41 @@ class TestTresetteEngine(unittest.TestCase):
 
     def test_that_the_number_of_cards_is_the_same_after_10_steps(self):
         self.env.reset()
+        first_value = len(self.env.players[0].hand.cards)
         for _ in range(10):
             valid_actions = self.env.get_valid_actions()
             action = random.choice(valid_actions)
             _, _ = self.env.step(action)
 
-        first_value = len(self.env.players[0].hand)
         for player in self.env.players:
-            self.assertEqual(first_value, len(player.hand))
+            self.assertEqual(first_value, len(player.hand.cards))
 
     def test_trick_resolution(self):
         self.env.reset()
-        self.env.trick = [
+        self.env.trick.lead_suit = 'coppe'
+        self.env.trick.played_cards = [
             (0, Card('coppe', '3')),
             (1, Card('coppe', '1'))
         ]
-        winner = self.env._resolve_trick()
+        winner, points = self.env.trick.resolve_trick()
         self.assertEqual(winner, 0)
+        self.assertAlmostEqual(points, 1.333333333)
 
     def test_trick_resolution_different_suit(self):
         self.env.reset()
-        self.env.trick = [
-            (0, Card('coppe', '1')),
+        self.env.trick.lead_suit = 'coppe'
+        self.env.trick.played_cards = [
+            (0, Card('coppe', '2')),
             (1, Card('bastoni', '3'))
         ]
-        winner = self.env._resolve_trick()
+        winner, points = self.env.trick.resolve_trick()
         self.assertEqual(winner, 0)
+        self.assertAlmostEqual(points, 0.66666667)
 
     def test_get_valid_moves_follow_suit(self):
         player = self.env.players[0]
-        # Manually give player cards with mixed suits
-        player.hand = [
+        self.env.trick.lead_suit = 'coppe'
+        player.hand.cards = [
             Card('coppe', '3'),
             Card('bastoni', '1'),
             Card('coppe', '7')
@@ -102,7 +106,7 @@ class TestTresetteEngine(unittest.TestCase):
             action = random.choice(valid_actions)
             _, _ = self.env.step(action)
         for player in self.env.players:
-            self.assertEqual(len(player.hand), 0)
+            self.assertEqual(len(player.hand.cards), 0)
 
 if __name__ == "__main__":
     unittest.main()

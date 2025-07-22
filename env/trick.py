@@ -1,15 +1,14 @@
 from env.card import Card
 
-from typing import List
+from typing import List, Tuple
 
 class Trick:
-    def __init__(self, trick_size=2):
-        self.size = trick_size
+    def __init__(self):
         self.reset()
 
     def reset(self):
         self.lead_suit = None
-        self.played_cards: List[Card] = []
+        self.played_cards: List[Tuple[int, Card]] = []
     
     def resolve_trick(self):
         lead_cards = [(player_id, card) for player_id, card in self.played_cards if card.suit == self.lead_suit]

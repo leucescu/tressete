@@ -37,13 +37,13 @@ class Player:
 
     def get_valid_moves(self, lead_suit=None):
         if lead_suit is None:
-            return list(range(len(self.hand)))
+            return list(range(len(self.hand.cards)))
 
         # Must follow suit if possible
         valid_indices = [i for i, card in enumerate(self.hand.cards) if card.suit == lead_suit]
         if valid_indices:
             return valid_indices
-        return list(range(len(self.hand)))
+        return list(range(len(self.hand.cards)))
 
     def collect_trick(self, trick_cards: List[Card], trick_pts: float):
         self.won_cards.extend(trick_cards)
