@@ -9,8 +9,9 @@ class TestTresetteEngine(unittest.TestCase):
 
     def test_reset_environment(self):
         obs = self.env.reset()
-        self.assertEqual(len(obs["hand"]), 10)
-        self.assertEqual(obs["current_player"], 0)
+        self.assertEqual(len(self.env.players[0].hand.cards), 10)
+        self.assertEqual(len(self.env.players[1].hand.cards), 10)
+        self.assertEqual(self.env.current_player, 0)
         self.assertEqual(len(self.env.deck.cards), 20)
 
     def test_valid_actions(self):

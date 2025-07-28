@@ -1,9 +1,11 @@
-import torch
+import os
 import wandb
+import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.callbacks import CheckpointCallback
+from model.training_config import TrainingConfig
 from model.gym_wrapper import TresetteGymWrapper
 from model.model import AttentionMLP
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
@@ -32,25 +34,18 @@ class CustomMLPExtractor(BaseFeaturesExtractor):
     def forward(self, x):
         return self.model(x)
 
-def exp_decay_schedule(initial_value, decay_rate=0.99, min_lr=1e-5):
+def cosine_schedule(initial_value, min_lr=1e-5):
     def scheduler(progress_remaining):
-        current_step = 1 - progress_remaining
-        lr = initial_value * (decay_rate ** (current_step * 100))
-        return max(min_lr, lr)
+        return min_lr + 0.5 * (initial_value - min_lr) * (1 + np.cos(np.pi * (1 - progress_remaining)))
     return scheduler
 
 def main():
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
-    print(f"Using device: {device}")
+    cfg = TrainingConfig()
 
+    print(f"Using device: {cfg.device}")
     wandb.init(project="tresette-agent", sync_tensorboard=True)
 
-    total_timesteps = 3_000_000
-    initial_lr = 3e-4
-    decay_rate = 0.995  # tweak this for slower or faster decay
-    min_lr = 1e-5
-
-    new_logger = configure("logs", ["stdout", "csv", "tensorboard"])
+    logger = configure(cfg.log_dir, ["stdout", "csv", "tensorboard"])
     policy_kwargs = dict(
         features_extractor_class=CustomMLPExtractor,
         features_extractor_kwargs=dict(features_dim=256),
@@ -59,48 +54,47 @@ def main():
 
     model = PPO(
         'MlpPolicy',
-        DummyVecEnv([make_env(use_heuristic=True, device=device)]),  # heuristic start
+        DummyVecEnv([make_env(use_heuristic=True, device=cfg.device)]),
         policy_kwargs=policy_kwargs,
         verbose=1,
-        tensorboard_log='./runs/tresette',
-        device=device,
-        learning_rate=exp_decay_schedule(initial_lr, decay_rate, min_lr),
-        ent_coef=0.01,
-        vf_coef=1.0
+        tensorboard_log=cfg.tensorboard_log,
+        device=cfg.device,
+        learning_rate=cosine_schedule(cfg.initial_lr, cfg.min_lr),
+        ent_coef=cfg.ent_coef,
+        vf_coef=cfg.vf_coef
     )
-    model.set_logger(new_logger)
+    model.set_logger(logger)
 
-    checkpoint_callback = CheckpointCallback(save_freq=10_000, save_path='./checkpoints/')
+    checkpoint_callback = CheckpointCallback(save_freq=10_000, save_path=cfg.checkpoint_path)
 
-    clone_interval = 50_000
-    heuristic_cutoff = 50_000
     current_timesteps = 0
     opponent_model = None
     use_heuristic = True
 
-    while current_timesteps < total_timesteps:
-        next_timesteps = min(current_timesteps + clone_interval, total_timesteps)
+    while current_timesteps < cfg.total_timesteps:
+        next_timesteps = min(current_timesteps + cfg.clone_interval, cfg.total_timesteps)
 
-        # Switch to self-play after 1M
-        if current_timesteps >= heuristic_cutoff and use_heuristic:
+        if current_timesteps >= cfg.heuristic_cutoff and use_heuristic:
             use_heuristic = False
-            opponent_model = PPO.load("tresette_agent_clone", device=device)
+            if os.path.exists(cfg.clone_model_path + ".zip"):
+                opponent_model = PPO.load(cfg.clone_model_path, device=cfg.device)
+            else:
+                print("Clone model not found. Continuing with heuristic.")
+
+        env = DummyVecEnv([make_env(opponent_model, use_heuristic, cfg.device)])
+        model.set_env(env)
 
         model.learn(
-            total_timesteps=clone_interval,
+            total_timesteps=cfg.clone_interval,
             reset_num_timesteps=False,
             callback=checkpoint_callback
         )
         current_timesteps = next_timesteps
 
-        model.save("tresette_agent_clone")
+        model.save(cfg.clone_model_path)
 
-        env = DummyVecEnv([make_env(opponent_model, use_heuristic, device)])
-        model.set_env(env)
-        env.close()
-
-    model.save("tresette_agent_final")
-
+    model.save(cfg.final_model_path)
+    wandb.finish()
 
 if __name__ == "__main__":
     main()
