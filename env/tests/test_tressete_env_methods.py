@@ -76,6 +76,7 @@ class TestTresetteEngine(unittest.TestCase):
         winner, points = self.env.trick.resolve_trick()
         self.assertEqual(winner, 0)
         self.assertAlmostEqual(points, 0.66666667)
+        self.assertEqual(self.env.trick.played_cards, [])
 
     def test_get_valid_moves_follow_suit(self):
         player = self.env.players[0]

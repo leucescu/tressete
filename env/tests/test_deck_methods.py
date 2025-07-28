@@ -19,5 +19,12 @@ class TestDeck(unittest.TestCase):
         self.assertIsInstance(card, Card)
         self.assertEqual(len(deck.cards), start_len - 1)
 
+    def test_draw_returns_none_when_empty(self):
+        deck = Deck()
+        for _ in range(40):
+            deck.draw()
+        
+        self.assertIsNone(deck.draw())
+
 if __name__ == "__main__":
     unittest.main()

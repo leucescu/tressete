@@ -16,25 +16,33 @@ class TresetteGymWrapper(gym.Env):
         self.device = device
 
         self.action_space = spaces.Discrete(10)
-        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(162,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(204,), dtype=np.float32)
         self.episode_counter = 0
 
     def reset(self):
-        obs = self.env.reset()
-        return encode_state(obs, self.env.players[self.agent_index])
+        self.env.reset()
+        return encode_state(self.env._get_obs(), self.env.players[self.agent_index])
 
     def step(self, action):
-        valid_actions = self.env.get_valid_actions()
-        if not valid_actions:
-            # No valid actions — likely game over
-            return encode_state(self.env._get_obs(), self.env.players[self.agent_index]), 0.0, True, {}
+        if self.env.current_player == self.agent_index:
+            self.play_agents_action(action)
+            if self.env.done:
+                raise ValueError("Game ended before opponent's turn could be played.")
+            self.play_opponents_action()
+        else:
+            self.play_opponents_action()
+            if self.env.done:
+                raise ValueError("Game ended before agent's turn could be played.")
+            self.play_agents_action(action)
 
-        if action not in valid_actions:
-            # Uncomment for debugging:
-            # print(f"[WARN] Invalid action {action}. Valid: {valid_actions}")
-            action = np.random.choice(valid_actions)
+        reward = self.get_reward_value(self.env.done)
 
-        obs, done = self.env.step(action)
+        return encode_state(self.env._get_obs(), self.env.players[self.agent_index]), reward, self.env.done, {}
+
+    def get_valid_actions(self):
+        return self.env.get_valid_actions()
+    
+    def get_reward_value(self, done):
         reward = self.env.players[self.agent_index].last_trick_pts
 
         if done:
@@ -46,29 +54,33 @@ class TresetteGymWrapper(gym.Env):
             reward += (agent_points - 5.5)
             wandb.log({"reward": reward}, step=self.episode_counter)
 
-        # Opponent turn(s)
-        while not done and self.env.current_player != self.agent_index:
-            valid_actions = self.env.get_valid_actions()
-            if not valid_actions:
-                break  # Shouldn't happen, but guards against crash
+        return reward / 7.5  # Normalize reward to [-1, 1] range
 
-            if self.opponent_policy == "heuristic":
-                player = self.env.players[self.env.current_player]
-                trick = self.env.trick
-                lead_suit = trick[0][1].suit if trick else None
-                action_opponent = SimpleHeuristicPolicy.get_action_index(player, lead_suit, trick)
-            elif self.opponent_model:
-                obs_raw = self.env._get_obs()
-                encoded = encode_state(obs_raw, self.env.players[self.env.current_player])
-                action_opponent, _ = self.opponent_model.predict(encoded, deterministic=True)
-                if action_opponent not in valid_actions:
-                    action_opponent = np.random.choice(valid_actions)
-            else:
+    def play_opponents_action(self):
+        valid_actions = self.env.get_valid_actions()
+
+        if self.opponent_policy == "heuristic":
+            player = self.env.players[self.env.current_player]
+            trick = self.env.trick
+            lead_suit = trick.lead_suit if trick else None
+            action_opponent = SimpleHeuristicPolicy.get_action_index(player, lead_suit, trick)
+        elif self.opponent_model:
+            obs_raw = self.env._get_obs()
+            encoded = encode_state(obs_raw, self.env.players[self.env.current_player])
+            action_opponent, _ = self.opponent_model.predict(encoded, deterministic=True)
+            if action_opponent not in valid_actions:
                 action_opponent = np.random.choice(valid_actions)
+        else:
+            action_opponent = np.random.choice(valid_actions)
 
-            obs, done = self.env.step(action_opponent)
+        _, _ = self.env.step(action_opponent)
+        
+    def play_agents_action(self, action):
+        valid_actions = self.env.get_valid_actions()
 
-        return encode_state(obs, self.env.players[self.agent_index]), reward, done, {}
+        if action not in valid_actions:
+            # Uncomment for debugging:
+            # print(f"[WARN] Invalid action {action}. Valid: {valid_actions}")
+            action = np.random.choice(valid_actions)
 
-    def get_valid_actions(self):
-        return self.env.get_valid_actions()
+        _, _ = self.env.step(action)

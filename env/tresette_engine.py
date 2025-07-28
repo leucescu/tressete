@@ -26,9 +26,6 @@ class TresetteEngine:
         self.trick =  Trick()
         self.done = False
 
-        # Revisit this
-        self.final_trick_winner = None
-
         # Keep track of points per trick to avoid double counting
         self.points_accumulated = 0.0
 
@@ -36,8 +33,8 @@ class TresetteEngine:
 
     # Step performed for each player's turn
     def step(self, action_idx: int):
-        # if self.done:
-        #     raise Exception("Game over. Call reset().")
+        if self.done:
+            self.reset()
 
         player = self.players[self.current_player]
         lead_suit = self.trick.lead_suit
@@ -110,22 +107,20 @@ class TresetteEngine:
         return player.get_valid_moves(self.trick.lead_suit)
     
     def _get_obs(self):
-        current_hand = self.players[self.current_player].hand
+        # current_hand = self.players[self.current_player].hand
 
         other_known_cards = []
-        played_cards = []
         # This may be needed to change in the future if more players are added
-        for player in self.players:
-            if player != self.players[self.current_player]:
-                other_known_cards.extend(player.known_cards) 
-            played_cards.extend(player.won_cards)
+        opponent_won_cards = self.players[(self.current_player + 1) % self.num_players].won_cards
+        opponent_points = self.players[(self.current_player + 1) % self.num_players].num_pts
 
         return {
-            "hand": current_hand.cards,
+            # "hand": current_hand.cards,
             "trick": self.trick.played_cards,
-            "current_player": self.current_player,
+            # "current_player": self.current_player,
             "cards_left_in_deck": len(self.deck.cards),
             "other_players_known_cards": other_known_cards,
-            "played_cards": played_cards
+            "opponent_won_cards": opponent_won_cards,
+            "opponent_points": opponent_points
         }
 
