@@ -8,7 +8,7 @@ class TrainingConfig:
         # PPO settings
         self.total_timesteps = 3_000_000
         self.initial_lr = 3e-4
-        self.decay_rate = 0.995
+        self.decay_rate = 0.999
         self.min_lr = 1e-5
         self.ent_coef = 0.01
         self.vf_coef = 1.0
@@ -21,5 +21,5 @@ class TrainingConfig:
         self.final_model_path = 'tresette_agent_final'
 
         # Self-play parameters
-        self.clone_interval = 50_000
-        self.heuristic_cutoff = 50_000
+        self.clone_interval = 30_000
+        self.heuristic_cutoff = 30_000

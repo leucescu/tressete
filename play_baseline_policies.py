@@ -3,13 +3,14 @@ from env.tresette_engine import TresetteEngine
 from env.baseline_policies import (
     RandomPolicy,
     HighestLeadSuitPolicy,
-    SimpleHeuristicPolicy
+    SimpleHeuristicPolicy,
+    SlightlySmarterHeuristicPolicy
 )
 
 policy_classes = {
     "random": RandomPolicy,
     "highest-lead": HighestLeadSuitPolicy,
-    "heuristic": SimpleHeuristicPolicy
+    "heuristic": SlightlySmarterHeuristicPolicy
 }
 
 

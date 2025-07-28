@@ -50,7 +50,7 @@ class SimpleHeuristicPolicy(BaselinePolicy):
 # Add tests for this one and examine it
 class SlightlySmarterHeuristicPolicy(BaselinePolicy):
     @staticmethod
-    def get_action_index(player: Player, lead_suit: str, trick: Optional[List] = None) -> int:
+    def get_action_index(player: Player, lead_suit: str, trick: Optional[Trick] = None) -> int:
         valid_moves = player.get_valid_moves(lead_suit)
 
         if lead_suit is None:
@@ -63,8 +63,8 @@ class SlightlySmarterHeuristicPolicy(BaselinePolicy):
             return max(valid_moves, key=lambda i: player.hand.cards[i].value())
 
         if trick:
-            lead_cards = [(pid, card) for pid, card in trick if card.suit == lead_suit]
-            highest_card_value = max(card.value() for _, card in lead_cards)
+            lead_cards = [(pid, card) for pid, card in trick.played_cards if card.suit == lead_suit]
+            highest_card_value = max(card.point_value for _, card in lead_cards)
             beating_cards = [i for i in valid_moves if player.hand.cards[i].suit == lead_suit and player.hand.cards[i].value() > highest_card_value]
             if beating_cards:
                 # Play the weakest card that still beats
@@ -74,3 +74,4 @@ class SlightlySmarterHeuristicPolicy(BaselinePolicy):
         suit_counts = player.hand.suit_counts()
         discard_index = min(valid_moves, key=lambda i: (player.hand.cards[i].value(), suit_counts.get(player.hand.cards[i].suit, 0)))
         return discard_index
+    
