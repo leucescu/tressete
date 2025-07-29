@@ -156,7 +156,6 @@ class AdvancedHeuristicPolicy(BaselinePolicy):
     @staticmethod
     def get_index_to_play_by_potential_points(safe_indices: List[int], player: Player) -> int:
         # Play the card that has the highest potential points
-        # This is a heuristic that assumes higher value cards are more likely to win tricks
         max_points = -1
         index_to_play = None
         min_rank = 14
