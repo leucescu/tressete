@@ -1,21 +1,55 @@
 import torch.nn as nn
 
-class AttentionMLP(nn.Module):
-    def __init__(self, input_dim=204, hidden_dim=256, output_dim=256):  # output_dim = feature dim
+class TressetteMLP(nn.Module):
+    def __init__(self, input_dim=204, hidden_dim=512, output_dim=256, dropout_rate=0.3):
         super().__init__()
-        self.input_proj = nn.Linear(input_dim, hidden_dim)
-        self.attn = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=4, batch_first=True)
-        self.fc = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),  # Added extra hidden layer
-            nn.ReLU(),
-            nn.Linear(hidden_dim, output_dim)  # Output feature vector
+        
+        # Input processing with batch normalization
+        self.input_net = nn.Sequential(
+            nn.Linear(input_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
+            nn.LeakyReLU(negative_slope=0.01),
+            nn.Dropout(dropout_rate)
         )
-
+        
+        # Deep residual blocks
+        self.block1 = self._make_residual_block(hidden_dim, dropout_rate)
+        self.block2 = self._make_residual_block(hidden_dim, dropout_rate)
+        self.block3 = self._make_residual_block(hidden_dim, dropout_rate)
+        
+        # Output network
+        self.output_net = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.LeakyReLU(negative_slope=0.01),
+            nn.Dropout(dropout_rate),
+            nn.Linear(hidden_dim // 2, output_dim)
+        )
+        
+    def _make_residual_block(self, dim, dropout_rate):
+        return nn.Sequential(
+            nn.Linear(dim, dim),
+            nn.BatchNorm1d(dim),
+            nn.LeakyReLU(negative_slope=0.01),
+            nn.Dropout(dropout_rate),
+            nn.Linear(dim, dim),
+            nn.BatchNorm1d(dim),
+            nn.LeakyReLU(negative_slope=0.01),
+            nn.Dropout(dropout_rate)
+        )
+    
     def forward(self, x):
-        x = self.input_proj(x)
-        x = x.unsqueeze(1)  # (batch, seq_len=1, hidden)
-        attn_output, _ = self.attn(x, x, x)
-        x = attn_output.squeeze(1)
-        return self.fc(x)
+        # Input processing
+        x = self.input_net(x)
+        
+        # Residual blocks
+        residual = x
+        x = self.block1(x) + residual
+        
+        residual = x
+        x = self.block2(x) + residual
+        
+        residual = x
+        x = self.block3(x) + residual
+        
+        # Output processing
+        return self.output_net(x)

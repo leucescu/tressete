@@ -50,7 +50,6 @@ def play_game():
     policies = [select_policy(pid) for pid in range(num_players)]
 
     env = TresetteEngine(num_players=num_players)
-    obs = env.reset()
 
     while not env.done:
         current_player = env.current_player

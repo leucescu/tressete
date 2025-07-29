@@ -10,7 +10,6 @@ class TrainingConfig:
         self.initial_lr = 3e-4
         self.decay_rate = 0.999
         self.min_lr = 1e-5
-        self.ent_coef = 0.01
         self.vf_coef = 1.0
 
         # Logging & Checkpointing
@@ -23,3 +22,10 @@ class TrainingConfig:
         # Self-play parameters
         self.clone_interval = 30_000
         self.heuristic_cutoff = 30_000
+
+        self.ent_coef_start = 0.1
+        self.ent_coef_final = 0.001
+        self.kl_coef = 0.03
+        self.gamma=0.99          # Increase from default 0.99
+        self.gae_lambda=0.97     # Higher lambda for longer credit assignment
+        self.n_steps=4096 

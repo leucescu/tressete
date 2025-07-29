@@ -1,13 +1,14 @@
 import os
 import wandb
 import numpy as np
+import torch.nn as nn
 from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 from stable_baselines3.common.logger import configure
 from stable_baselines3.common.callbacks import CheckpointCallback
 from model.training_config import TrainingConfig
 from model.gym_wrapper import TresetteGymWrapper
-from model.model import AttentionMLP
+from model.model import TressetteMLP
 from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
 
 # Wrapper for environment creation
@@ -21,22 +22,33 @@ def make_env(opponent_model=None, use_heuristic=False, device='cpu'):
     return _init
 
 
-# Custom feature extractor using your attention-based MLP
 class CustomMLPExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=256):
+    def __init__(self, observation_space, features_dim=512):
         super().__init__(observation_space, features_dim)
-        self.model = AttentionMLP(
-            input_dim=observation_space.shape[0],
-            hidden_dim=256,
-            output_dim=features_dim
+        self.model = nn.Sequential(
+            TressetteMLP(input_dim=observation_space.shape[0], 
+                        hidden_dim=512,
+                        output_dim=features_dim),
+            nn.Dropout(0.3)  # Add dropout
         )
-
+        # Initialize weights properly
+        self.apply(self._init_weights)
+    
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
+            nn.init.constant_(m.bias, 0.0)
+    
     def forward(self, x):
         return self.model(x)
 
-def cosine_schedule(initial_value, min_lr=1e-5):
+# Learning rate scheduler using cosine decay with warmup
+def cosine_schedule(initial_value, min_lr=1e-5, warmup_fraction=0.3):
     def scheduler(progress_remaining):
-        return min_lr + 0.5 * (initial_value - min_lr) * (1 + np.cos(np.pi * (1 - progress_remaining)))
+        if progress_remaining > (1 - warmup_fraction):
+            return initial_value * (1 - progress_remaining) / warmup_fraction
+        progress = (1 - progress_remaining - warmup_fraction) / (1 - warmup_fraction)
+        return min_lr + 0.5 * (initial_value - min_lr) * (1 + np.cos(np.pi * progress))
     return scheduler
 
 def main():
@@ -48,8 +60,10 @@ def main():
     logger = configure(cfg.log_dir, ["stdout", "csv", "tensorboard"])
     policy_kwargs = dict(
         features_extractor_class=CustomMLPExtractor,
-        features_extractor_kwargs=dict(features_dim=256),
-        net_arch=[dict(pi=[256, 256], vf=[256, 256])]
+        features_extractor_kwargs=dict(features_dim=512),  # Increased from 256
+        net_arch=[dict(pi=[256, 256], vf=[512, 512, 256])],  # Deeper value head
+        activation_fn=nn.LeakyReLU,
+        ortho_init=True
     )
 
     model = PPO(
@@ -60,8 +74,13 @@ def main():
         tensorboard_log=cfg.tensorboard_log,
         device=cfg.device,
         learning_rate=cosine_schedule(cfg.initial_lr, cfg.min_lr),
-        ent_coef=cfg.ent_coef,
-        vf_coef=cfg.vf_coef
+        ent_coef=cfg.ent_coef_start,
+        vf_coef=cfg.vf_coef,
+        normalize_advantage=True,  # Critical for stable updates
+        target_kl=cfg.kl_coef,            # Add KL early stopping
+        gamma=cfg.gamma,          # Increase from default 0.99
+        gae_lambda=cfg.gae_lambda,     # Higher lambda for longer credit assignment
+        n_steps=cfg.n_steps, 
     )
     model.set_logger(logger)
 
