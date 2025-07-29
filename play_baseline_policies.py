@@ -4,13 +4,15 @@ from env.baseline_policies import (
     RandomPolicy,
     HighestLeadSuitPolicy,
     SimpleHeuristicPolicy,
-    SlightlySmarterHeuristicPolicy
+    SlightlySmarterHeuristicPolicy,
+    AdvancedHeuristicPolicy
 )
 
 policy_classes = {
     "random": RandomPolicy,
     "highest-lead": HighestLeadSuitPolicy,
-    "heuristic": SlightlySmarterHeuristicPolicy
+    "heuristic": SlightlySmarterHeuristicPolicy,
+    "Advanced Heuristic": AdvancedHeuristicPolicy
 }
 
 
@@ -54,17 +56,20 @@ def play_game():
     while not env.done:
         current_player = env.current_player
         player = env.players[current_player]
-        lead_suit = env.trick[0][1].suit if env.trick else None
+        lead_suit = env.trick.lead_suit if env.trick else None
         trick = env.trick
 
         policy = policies[current_player]
-        action_idx = policy.get_action_index(player, lead_suit, trick)
-        chosen_card = player.hand[action_idx]
+        if current_player != 0:
+            action_idx = policy.get_action_index(player, lead_suit, trick)
+        else:
+            action_idx = AdvancedHeuristicPolicy.get_action_index(env)
+        chosen_card = player.hand.cards[action_idx]
         print(f"Player {current_player} plays: {chosen_card}")
         _, _,  = env.step(action_idx)
 
-        if len(env.trick) == 0:
-            print_trick(env.trick)
+        if len(env.trick.played_cards) == 0:
+            print_trick(env.trick.played_cards)
 
     print("\nGame Over")
     print("=" * 30)

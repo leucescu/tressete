@@ -12,7 +12,6 @@ class Hand:
     def add_single_to_hand(self, card: Card):
         self.cards.append(card)
 
-    # Revise this in future
     def suit_counts(self):
         counts = {}
         for card in self.cards:

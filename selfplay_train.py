@@ -26,19 +26,20 @@ class CustomMLPExtractor(BaseFeaturesExtractor):
     def __init__(self, observation_space, features_dim=512):
         super().__init__(observation_space, features_dim)
         self.model = nn.Sequential(
-            TressetteMLP(input_dim=observation_space.shape[0], 
-                        hidden_dim=512,
-                        output_dim=features_dim),
-            nn.Dropout(0.3)  # Add dropout
+            TressetteMLP(
+                input_dim=214,
+                hidden_dim=512,
+                output_dim=features_dim,
+                dropout_rate=0.0        # Temporarily disabled for testing
+            )
         )
-        # Initialize weights properly
         self.apply(self._init_weights)
-    
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
             nn.init.constant_(m.bias, 0.0)
-    
+
     def forward(self, x):
         return self.model(x)
 

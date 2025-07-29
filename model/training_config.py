@@ -20,8 +20,8 @@ class TrainingConfig:
         self.final_model_path = 'tresette_agent_final'
 
         # Self-play parameters
-        self.clone_interval = 30_000
-        self.heuristic_cutoff = 30_000
+        self.clone_interval = 50_000
+        self.heuristic_cutoff = 50_000
 
         self.ent_coef_start = 0.1
         self.ent_coef_final = 0.001

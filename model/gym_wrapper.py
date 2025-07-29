@@ -4,7 +4,7 @@ import numpy as np
 from gym import spaces
 from env.tresette_engine import TresetteEngine
 from model.state_encoder import encode_state
-from env.baseline_policies import SimpleHeuristicPolicy, SlightlySmarterHeuristicPolicy
+from env.baseline_policies import SimpleHeuristicPolicy, SlightlySmarterHeuristicPolicy, AdvancedHeuristicPolicy
 
 class TresetteGymWrapper(gym.Env):
     def __init__(self, opponent_model=None, opponent_policy=None, device='cpu'):
@@ -16,7 +16,7 @@ class TresetteGymWrapper(gym.Env):
         self.device = device
 
         self.action_space = spaces.Discrete(10)
-        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(204,), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(214,), dtype=np.float32)
         self.episode_counter = 0
 
     def reset(self):
@@ -63,7 +63,7 @@ class TresetteGymWrapper(gym.Env):
             player = self.env.players[self.env.current_player]
             trick = self.env.trick
             lead_suit = trick.lead_suit if trick else None
-            action_opponent = SlightlySmarterHeuristicPolicy.get_action_index(player, lead_suit, trick)
+            action_opponent = AdvancedHeuristicPolicy.get_action_index(self.env)
         elif self.opponent_model:
             obs_raw = self.env._get_obs()
             encoded = encode_state(obs_raw, self.env.players[self.env.current_player])
