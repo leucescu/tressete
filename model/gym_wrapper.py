@@ -12,7 +12,7 @@ class TresetteGymWrapper(gym.Env):
         self.env = TresetteEngine()
         self.agent_index = 0
         self.opponent_model = opponent_model
-        self.opponent_policy = opponent_policy  # "heuristic", "random", or None
+        self.opponent_policy = opponent_policy  # "heuristic", model, or None
         self.device = device
 
         self.action_space = spaces.Discrete(10)
@@ -24,8 +24,11 @@ class TresetteGymWrapper(gym.Env):
         return encode_state(self.env._get_obs(), self.env.players[self.agent_index])
 
     def step(self, action):
+        reward = 0.0
+        punishment = 0.0
+
         if self.env.current_player == self.agent_index:
-            self.play_agents_action(action)
+            punishment = self.play_agents_action(action)
             if self.env.done:
                 raise ValueError("Game ended before opponent's turn could be played.")
             self.play_opponents_action()
@@ -33,9 +36,10 @@ class TresetteGymWrapper(gym.Env):
             self.play_opponents_action()
             if self.env.done:
                 raise ValueError("Game ended before agent's turn could be played.")
-            self.play_agents_action(action)
+            punishment = self.play_agents_action(action)
 
-        reward = self.get_reward_value(self.env.done)
+        reward += punishment
+        reward += self.get_reward_value(self.env.done)
 
         return encode_state(self.env._get_obs(), self.env.players[self.agent_index]), reward, self.env.done, {}
 
@@ -60,27 +64,37 @@ class TresetteGymWrapper(gym.Env):
         valid_actions = self.env.get_valid_actions()
 
         if self.opponent_policy == "heuristic":
-            player = self.env.players[self.env.current_player]
+            # player = self.env.players[self.env.current_player]
             trick = self.env.trick
-            lead_suit = trick.lead_suit if trick else None
+            # lead_suit = trick.lead_suit if trick else None
             action_opponent = AdvancedHeuristicPolicy.get_action_index(self.env)
         elif self.opponent_model:
             obs_raw = self.env._get_obs()
             encoded = encode_state(obs_raw, self.env.players[self.env.current_player])
             action_opponent, _ = self.opponent_model.predict(encoded, deterministic=True)
             if action_opponent not in valid_actions:
-                action_opponent = np.random.choice(valid_actions)
+                # raise ValueError(f"Invalid action {action_opponent} chosen by opponent model. Valid actions: {valid_actions}")
+                action_opponent = AdvancedHeuristicPolicy.get_action_index(self.env)
         else:
-            action_opponent = np.random.choice(valid_actions)
+            raise RuntimeError("No opponent model or policy defined.")
 
         _, _ = self.env.step(action_opponent)
         
     def play_agents_action(self, action):
+        punishment = 0.0
         valid_actions = self.env.get_valid_actions()
 
         if action not in valid_actions:
-            # Uncomment for debugging:
-            # print(f"[WARN] Invalid action {action}. Valid: {valid_actions}")
-            action = np.random.choice(valid_actions)
+            # Use advanced heuristic policy as fallback
+            
+            action = np.random.choice(valid_actions)  # Fallback to random valid action
+            punishment = -0.25
+
+            # Double-check if heuristic action is valid (just in case)
+            if action not in valid_actions:
+                raise ValueError(f"Invalid action {action} chosen by agent. Valid actions: {valid_actions}")
+            
 
         _, _ = self.env.step(action)
+
+        return punishment

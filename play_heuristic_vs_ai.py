@@ -2,7 +2,7 @@ import numpy as np
 from stable_baselines3 import PPO
 
 from env.tresette_engine import TresetteEngine
-from env.baseline_policies import SlightlySmarterHeuristicPolicy
+from env.baseline_policies import SlightlySmarterHeuristicPolicy, AdvancedHeuristicPolicy
 from model.state_encoder import encode_state  # Your 204-dim vector function
 
 # === Load trained model ===
@@ -32,8 +32,8 @@ def play_game():
                 action = np.random.choice(valid_actions)
 
         else:  # Heuristic opponent
-            lead_suit = engine.trick.lead_suit
-            action = SlightlySmarterHeuristicPolicy.get_action_index(player, lead_suit, engine.trick)
+            # lead_suit = engine.trick.lead_suit
+            action = AdvancedHeuristicPolicy.get_action_index(engine)
 
         engine.step(action)
 
