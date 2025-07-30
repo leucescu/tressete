@@ -47,8 +47,18 @@ class MaskedPolicy(ActorCriticPolicy):
         distribution = self._get_action_dist_from_latent(latent_pi)
         logits = distribution.distribution.logits
 
-        mask = self.get_valid_actions_mask(obs)  # Use mask from last 10 obs dims
-        masked_logits = logits.masked_fill(mask == 0, float("-inf"))
+        mask = self.get_valid_actions_mask(obs).to(logits.device)
+
+        # Fix mask rows where all actions are invalid by enabling all actions
+        no_valid_action = (mask.sum(dim=1) == 0)
+        if no_valid_action.any():
+            mask[no_valid_action] = True
+
+        masked_logits = logits.masked_fill(~mask, float("-inf"))
+
+        # Optional sanity check for NaNs and replace them
+        if torch.isnan(masked_logits).any():
+            masked_logits = torch.nan_to_num(masked_logits, nan=0.0)
 
         new_distribution = torch.distributions.Categorical(logits=masked_logits)
 
@@ -62,16 +72,20 @@ class MaskedPolicy(ActorCriticPolicy):
         return actions, values, log_prob
 
     def get_valid_actions_mask(self, obs):
-        # obs shape: (batch_size, 214) — last 10 dims are valid action mask
-        return obs[:, 204:214]  # shape: (batch_size, 10)
+        mask = obs[:, 204:214]
+        return mask.bool() 
 
 
 # === Learning rate scheduler ===
 def cosine_schedule(initial_value, min_lr=1e-5, warmup_fraction=0.3):
     def scheduler(progress_remaining):
+        # progress_remaining: 1.0 (start) --> 0.0 (end)
         if progress_remaining > (1 - warmup_fraction):
-            return initial_value * (1 - progress_remaining) / warmup_fraction
-        progress = (1 - progress_remaining - warmup_fraction) / (1 - warmup_fraction)
+            # Warmup phase: scale linearly up from 0 to initial_value
+            warmup_progress = (1 - progress_remaining) / warmup_fraction
+            return warmup_progress * initial_value
+        # After warmup: cosine decay from initial_value to min_lr
+        progress = (progress_remaining - (1 - warmup_fraction)) / (1 - warmup_fraction)
         return min_lr + 0.5 * (initial_value - min_lr) * (1 + np.cos(np.pi * progress))
     return scheduler
 

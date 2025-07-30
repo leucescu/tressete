@@ -4,7 +4,7 @@ import numpy as np
 from gym import spaces
 from env.tresette_engine import TresetteEngine
 from model.state_encoder import encode_state
-from env.baseline_policies import SimpleHeuristicPolicy, SlightlySmarterHeuristicPolicy, AdvancedHeuristicPolicy
+from env.baseline_policies import AdvancedHeuristicPolicy
 
 class TresetteGymWrapper(gym.Env):
     def __init__(self, opponent_model=None, opponent_policy=None, device='cpu'):
@@ -25,27 +25,38 @@ class TresetteGymWrapper(gym.Env):
 
     def step(self, action):
         reward = 0.0
+        done = False
         punishment = 0.0
 
         if self.env.current_player == self.agent_index:
             punishment = self.play_agents_action(action)
-            if self.env.done:
-                raise ValueError("Game ended before opponent's turn could be played.")
-            self.play_opponents_action()
+            if punishment < 0:
+                done = True  # invalid action ends episode immediately
+            else:
+                if self.env.done:
+                    done = True
+                else:
+                    self.play_opponents_action()
+                    if self.env.done:
+                        done = True
         else:
             self.play_opponents_action()
             if self.env.done:
-                raise ValueError("Game ended before agent's turn could be played.")
-            punishment = self.play_agents_action(action)
+                done = True
+            else:
+                punishment = self.play_agents_action(action)
+                if punishment < 0:
+                    done = True
 
         reward += punishment
-        reward += self.get_reward_value(self.env.done)
+        reward += self.get_reward_value(done)
 
-        return encode_state(self.env._get_obs(), self.env.players[self.agent_index]), reward, self.env.done, {}
+        obs = encode_state(self.env._get_obs(), self.env.players[self.agent_index])
+        return obs, reward, done, {}
 
     def get_valid_actions(self):
         return self.env.get_valid_actions()
-    
+
     def get_reward_value(self, done):
         reward = self.env.players[self.agent_index].last_trick_pts
 
@@ -58,43 +69,30 @@ class TresetteGymWrapper(gym.Env):
             reward += (agent_points - 5.5)
             wandb.log({"reward": reward}, step=self.episode_counter)
 
-        return reward / 7.5  # Normalize reward to [-1, 1] range
+        return reward / 7.5  # Normalize reward
 
     def play_opponents_action(self):
         valid_actions = self.env.get_valid_actions()
 
         if self.opponent_policy == "heuristic":
-            # player = self.env.players[self.env.current_player]
-            trick = self.env.trick
-            # lead_suit = trick.lead_suit if trick else None
             action_opponent = AdvancedHeuristicPolicy.get_action_index(self.env)
         elif self.opponent_model:
             obs_raw = self.env._get_obs()
             encoded = encode_state(obs_raw, self.env.players[self.env.current_player])
             action_opponent, _ = self.opponent_model.predict(encoded, deterministic=True)
             if action_opponent not in valid_actions:
-                # raise ValueError(f"Invalid action {action_opponent} chosen by opponent model. Valid actions: {valid_actions}")
                 action_opponent = AdvancedHeuristicPolicy.get_action_index(self.env)
         else:
             raise RuntimeError("No opponent model or policy defined.")
 
         _, _ = self.env.step(action_opponent)
-        
+
     def play_agents_action(self, action):
-        punishment = 0.0
         valid_actions = self.env.get_valid_actions()
 
         if action not in valid_actions:
-            # Use advanced heuristic policy as fallback
-            
-            action = np.random.choice(valid_actions)  # Fallback to random valid action
-            punishment = -0.25
-
-            # Double-check if heuristic action is valid (just in case)
-            if action not in valid_actions:
-                raise ValueError(f"Invalid action {action} chosen by agent. Valid actions: {valid_actions}")
-            
+            # Invalid action: return penalty
+            return -1.0
 
         _, _ = self.env.step(action)
-
-        return punishment
+        return 0.0

@@ -10,7 +10,7 @@ class TrainingConfig:
         self.initial_lr = 2e-4
         self.decay_rate = 0.9995
         self.min_lr = 1e-5
-        self.vf_coef = 1.5
+        self.vf_coef = 1.0
 
         # Logging & Checkpointing
         self.log_dir = './logs'
@@ -23,7 +23,7 @@ class TrainingConfig:
         self.clone_interval = 150_000
         self.heuristic_cutoff = 150_000
 
-        self.ent_coef_start = 0.15
+        self.ent_coef_start = 0.075
         self.ent_coef_final = 0.001
         self.kl_coef = 0.015
         self.gamma=0.995          # Increase from default 0.99
