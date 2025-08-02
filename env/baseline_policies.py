@@ -12,13 +12,17 @@ class BaselinePolicy(ABC):
 
 class RandomPolicy(BaselinePolicy):
     @staticmethod
-    def get_action_index(player: Player, lead_suit: str, trick: Optional[List] = None) -> int:
+    def get_action_index(game_env: TresetteEngine) -> int:
+        player: Player = game_env.players[game_env.current_player]
+        lead_suit: str = game_env.trick.lead_suit
         valid_moves = player.get_valid_moves(lead_suit)
         return random.choice(valid_moves)
 
 class HighestLeadSuitPolicy(BaselinePolicy):
     @staticmethod
-    def get_action_index(player: Player, lead_suit: str, trick: Optional[List] = None) -> int:
+    def get_action_index(game_env: TresetteEngine) -> int:
+        player: Player = game_env.players[game_env.current_player]
+        lead_suit: str = game_env.trick.lead_suit
         valid_moves = player.get_valid_moves(lead_suit)
         if lead_suit is not None:
             lead_suit_cards = [(i, player.hand.cards[i]) for i in valid_moves if player.hand.cards[i].suit == lead_suit]
@@ -30,7 +34,10 @@ class HighestLeadSuitPolicy(BaselinePolicy):
 # This may have to be examined
 class SimpleHeuristicPolicy(BaselinePolicy):
     @staticmethod
-    def get_action_index(player: Player, lead_suit: str, trick: Optional[Trick] = None) -> int:
+    def get_action_index(game_env: TresetteEngine) -> int:
+        player: Player = game_env.players[game_env.current_player]
+        lead_suit: str = game_env.trick.lead_suit
+        trick = game_env.trick
         valid_moves = player.get_valid_moves(lead_suit)
         if lead_suit is None:
             # Leading: play highest card

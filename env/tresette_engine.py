@@ -31,14 +31,6 @@ class TresetteEngine:
 
         return self._get_obs()
 
-    # def get_winner(self):
-    #     for player in self.players:
-    #         if player.last_trick_pts > 0:
-    #             return player.id
-    #         else:
-    #             raise ValueError("No winner found.")
-
-    # Step performed for each player's turn
     def step(self, action_idx: int):
         if self.done:
             self.reset()

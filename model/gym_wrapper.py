@@ -4,7 +4,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from env.tresette_engine import TresetteEngine
 from model.state_encoder import EncodedState
-from env.baseline_policies import AdvancedHeuristicPolicy
+from env.baseline_policies import AdvancedHeuristicPolicy, SimpleHeuristicPolicy, HighestLeadSuitPolicy, RandomPolicy
 
 
 class TresetteGymWrapper(gym.Env):

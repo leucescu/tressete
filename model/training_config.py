@@ -42,8 +42,8 @@ class TrainingConfig:
         # Bigger buffer for more diverse training data, avoiding overfitting on small buffer
         self.buffer_size = 10000  
         
-        self.max_total_steps = 200_000
+        self.max_total_steps = 5_000_000
         
-        self.clone_interval = 50_000
+        self.clone_interval = 1_000_000
         
-        self.cutoff_steps = 50_000
+        self.cutoff_steps = 1_000_000
