@@ -35,7 +35,7 @@ class Player:
 
         return card
 
-    def get_valid_moves(self, lead_suit=None):
+    def get_valid_moves(self, lead_suit):
         if lead_suit is None:
             return list(range(len(self.hand.cards)))
 

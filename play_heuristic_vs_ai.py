@@ -3,7 +3,7 @@ from stable_baselines3 import PPO
 
 from env.tresette_engine import TresetteEngine
 from env.baseline_policies import SlightlySmarterHeuristicPolicy, AdvancedHeuristicPolicy
-from model.state_encoder import encode_state  # Your 204-dim vector function
+from model_scripts.state_encoder import encode_state  # Your 204-dim vector function
 
 # === Load trained model ===
 model = PPO.load("tresette_agent_clone.zip")

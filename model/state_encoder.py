@@ -1,60 +1,87 @@
 import numpy as np
 from env.card_config import SUITS, RANKS
-from env.player import Player
 
-# Converter used to convert a card represetation to one hot encoding vector index
-def card_to_index(card):
-    return SUITS.index(card.suit) * 10 + RANKS.index(card.rank)
+class EncodedState:
+    def __init__(self, num_players: int=2):
+        self.agent_state = np.zeros(214, dtype=np.float32)
+        self.opponent_state = np.zeros(214, dtype=np.float32)
 
-def encode_state(obs, player: Player, num_players: int=2):
-    # Initialize the state vector with zeros (214 dimensions)
-    state = np.zeros(214, dtype=np.float32)
+    @staticmethod
+    def card_to_index(card):
+        return SUITS.index(card.suit) * 10 + RANKS.index(card.rank)
 
-    # 1. Own hand (40-dim)
-    if player.hand.cards != []:
-        for card in player.hand.cards:
-            idx = card_to_index(card)
-            state[idx] = 1.0
+    # Converter used to convert a card represetation to one hot encoding vector index
+    @staticmethod
+    def encode_state(player_index: int, gym_env):
+        # Initialize the state vector with zeros (214 dimensions)
+        state = np.zeros(214, dtype=np.float32)
 
-    # 2. Trick cards (40-dim)
-    for _, card in obs['trick']:
-        if card is not None:
-            idx = card_to_index(card)
-            state[40 + idx] = 1.0
+        tressete_env = gym_env.env
+        trick = tressete_env.trick
+        player = tressete_env.players[player_index]
+        other_known_cards = tressete_env.players[(player_index + 1) % tressete_env.num_players].known_cards
+        # This may be needed to change in the future if more players are added
+        opponent_won_cards = tressete_env.players[(player_index + 1) % tressete_env.num_players].won_cards
+        opponent_points = tressete_env.players[(player_index + 1) % tressete_env.num_players].num_pts
+        cards_left_in_deck = len(tressete_env.deck.cards)
 
-    # 3. Known cards of others (40-dim)
-    for card in obs['other_players_known_cards']:
-        if card is not None:
-            idx = card_to_index(card)
-            state[80 + idx] = 1.0
+        # 1. Own hand (40-dim)
+        if player.hand.cards != []:
+            for card in player.hand.cards:
+                idx = EncodedState.card_to_index(card)
+                state[idx] = 1.0
 
-    # 4. Opponent won cards (40-dim)
-    for _, card in obs['opponent_won_cards']:
-        if card is not None:
-            idx = card_to_index(card)
-            state[120 + idx] = 1.0
 
-    # 5. Own won cards (40-dim)
-    for _, card in player.won_cards:
-        if card is not None:
-            idx = card_to_index(card)
-            state[160 + idx] = 1.0
+        # 2. Trick cards (40-dim)
+        for _, card in trick.played_cards:
+            if card is not None:
+                idx = EncodedState.card_to_index(card)
+                state[40 + idx] = 1.0
 
-    # 6. Points (2 floats)
-    state[201] = player.num_pts
-    state[202] = obs["opponent_points"]  # custom, see wrapper
+        # 3. Known cards of others (40-dim)
+        for card in other_known_cards:
+            if card is not None:
+                idx = EncodedState.card_to_index(card)
+                state[80 + idx] = 1.0
 
-    # 7. Number of cards left in the deck (normalized float)
-    state[203] = obs["cards_left_in_deck"] / 40.0  # Normalize (max 40 cards in deck)
+        # 4. Opponent won cards (40-dim)
+        for _, card in opponent_won_cards:
+            if card is not None:
+                idx = EncodedState.card_to_index(card)
+                state[120 + idx] = 1.0
 
-    # --- 8. Append valid action mask (10 binary flags) ---
-    lead_card = obs['trick'][0][1] if obs['trick'] else None
-    lead_suit = lead_card.suit if lead_card else None
-    valid_actions = player.get_valid_moves(lead_suit)
+        # 5. Own won cards (40-dim)
+        for _, card in player.won_cards:
+            if card is not None:
+                idx = EncodedState.card_to_index(card)
+                state[160 + idx] = 1.0
 
-    # Create a binary mask: 1 if action is valid, 0 otherwise
-    valid_action_mask = np.zeros(10, dtype=np.float32)
-    valid_action_mask[valid_actions] = 1.0
-    state[204:] = valid_action_mask
+        # 6. Points (2 floats)
+        state[201] = player.num_pts
+        state[202] = opponent_points  # custom, see wrapper
 
-    return state
+        # 7. Number of cards left in the deck (normalized float)
+        state[203] = cards_left_in_deck / 40.0  # Normalize (max 40 cards in deck)
+
+        # --- 8. Append valid action mask (10 binary flags) ---
+        valid_actions = gym_env.env.get_valid_actions()  # Use env method for consistency
+        valid_action_mask = np.zeros(10, dtype=np.float32)
+        for i in valid_actions:
+            if 0 <= i < 10:
+                valid_action_mask[i] = 1.0
+        state[204:] = valid_action_mask
+
+        # Verify length before returning
+        if len(state) != 214:
+            print(f"Invalid state length: {len(state)}")
+            return np.zeros(214, dtype=np.float32)
+            
+        return state
+
+    def update_player_state(self, gym_env):
+        encoded_agent = EncodedState.encode_state(gym_env.agent_index, gym_env)
+        encoded_opponent = EncodedState.encode_state((gym_env.agent_index + 1) % gym_env.env.num_players, gym_env)
+
+        self.agent_state = encoded_agent
+        self.opponent_state = encoded_opponent
+

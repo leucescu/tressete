@@ -2,30 +2,48 @@ import torch
 
 class TrainingConfig:
     def __init__(self):
-        # Environment settings
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-        # PPO settings
-        self.total_timesteps = 5_000_000
-        self.initial_lr = 2e-4
-        self.decay_rate = 0.9995
-        self.min_lr = 1e-5
-        self.vf_coef = 1.0
-
-        # Logging & Checkpointing
-        self.log_dir = './logs'
-        self.tensorboard_log = './runs/tresette'
-        self.checkpoint_path = './checkpoints/'
-        self.clone_model_path = 'tresette_agent_clone'
-        self.final_model_path = 'tresette_agent_final'
-
-        # Self-play parameters
-        self.clone_interval = 150_000
-        self.heuristic_cutoff = 150_000
-
-        self.ent_coef_start = 0.075
-        self.ent_coef_final = 0.001
-        self.kl_coef = 0.015
-        self.gamma=0.995          # Increase from default 0.99
-        self.gae_lambda=0.985     # Higher lambda for longer credit assignment
-        self.n_steps=1024 
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.input_dim = 214  # as per your encoder output size
+        self.action_dim = 10  # number of actions in your environment
+        
+        # Smaller hidden dims may help with stability, but 512 is okay if you have enough data
+        self.hidden_dim = 256  
+        self.actor_feature_dim = 128
+        
+        # Lower learning rate to reduce training instability
+        self.lr = 3e-4  
+        
+        self.discount_factor = 0.99
+        
+        # Gradient clipping max norm (keep the same or slightly stricter)
+        self.max_grad_norm = 0.5  
+        
+        self.estimation_step = 3
+        self.num_train_envs = 8
+        self.num_test_envs = 8
+        
+        # Increase epochs to allow more stable learning over smaller batches
+        self.max_epoch = 100  
+        
+        # Fewer steps per epoch but more epochs to avoid sudden big jumps
+        self.step_per_epoch = 500  
+        
+        # Repeat per collect: you can reduce this to lower variance in updates
+        self.repeat_per_collect = 2  
+        
+        self.episode_per_test = 10
+        
+        self.batch_size = 64  # could increase to 128 if memory allows
+        
+        self.step_per_collect = 100  # collect less data per update for smoother learning
+        
+        self.initial_collect_step = 2000
+        
+        # Bigger buffer for more diverse training data, avoiding overfitting on small buffer
+        self.buffer_size = 10000  
+        
+        self.max_total_steps = 200_000
+        
+        self.clone_interval = 1_000
+        
+        self.cutoff_steps = 1_000

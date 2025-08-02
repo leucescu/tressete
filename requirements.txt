@@ -1,10 +1,10 @@
-torch
 numpy
 wandb
 pytest
-gym
-stable_baselines3
 tensorboard
 matplotlib
 shimmy>=2.0
+torch>=2.0
+tianshou
+gym==0.26.2
 #rich              # Optional: for colorful CLI output

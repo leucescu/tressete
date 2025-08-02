@@ -1,96 +1,20 @@
-import os
-import wandb
-import numpy as np
 import torch
-import torch.nn as nn
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv
-from stable_baselines3.common.logger import configure
-from stable_baselines3.common.callbacks import CheckpointCallback
-from stable_baselines3.common.torch_layers import BaseFeaturesExtractor
-from stable_baselines3.common.policies import ActorCriticPolicy
+import numpy as np
+import wandb
+from copy import deepcopy
+
+from tianshou.data import Collector, VectorReplayBuffer
+from tianshou.env import DummyVectorEnv
+
+from model.model import CriticMLP
 from model.training_config import TrainingConfig
 from model.gym_wrapper import TresetteGymWrapper
-from model.model import TressetteMLP
+from model.maskable_policy import MaskableActor, MaskablePPOPolicy
+from model.tressete_actor import TressetteActor
+
+from env.baseline_policies import AdvancedHeuristicPolicy
 
 
-# === Custom Feature Extractor with Dropout ===
-class CustomMLPExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space, features_dim=512, dropout_rate=0.1):
-        super().__init__(observation_space, features_dim)
-        self.model = nn.Sequential(
-            TressetteMLP(
-                input_dim=214,
-                hidden_dim=512,
-                output_dim=features_dim,
-                dropout_rate=dropout_rate
-            ),
-            nn.Dropout(dropout_rate)
-        )
-        self.apply(self._init_weights)
-
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            nn.init.orthogonal_(m.weight, gain=np.sqrt(2))
-            nn.init.constant_(m.bias, 0.0)
-
-    def forward(self, x):
-        return self.model(x)
-
-
-# === Masked Policy ===
-class MaskedPolicy(ActorCriticPolicy):
-    def forward(self, obs, deterministic=False):
-        features = self.extract_features(obs)
-        latent_pi, latent_vf = self.mlp_extractor(features)
-
-        distribution = self._get_action_dist_from_latent(latent_pi)
-        logits = distribution.distribution.logits
-
-        mask = self.get_valid_actions_mask(obs).to(logits.device)
-
-        # Fix mask rows where all actions are invalid by enabling all actions
-        no_valid_action = (mask.sum(dim=1) == 0)
-        if no_valid_action.any():
-            mask[no_valid_action] = True
-
-        masked_logits = logits.masked_fill(~mask, float("-inf"))
-
-        # Optional sanity check for NaNs and replace them
-        if torch.isnan(masked_logits).any():
-            masked_logits = torch.nan_to_num(masked_logits, nan=0.0)
-
-        new_distribution = torch.distributions.Categorical(logits=masked_logits)
-
-        if deterministic:
-            actions = torch.argmax(masked_logits, dim=1)
-        else:
-            actions = new_distribution.sample()
-
-        log_prob = new_distribution.log_prob(actions)
-        values = self.value_net(latent_vf)
-        return actions, values, log_prob
-
-    def get_valid_actions_mask(self, obs):
-        mask = obs[:, 204:214]
-        return mask.bool() 
-
-
-# === Learning rate scheduler ===
-def cosine_schedule(initial_value, min_lr=1e-5, warmup_fraction=0.3):
-    def scheduler(progress_remaining):
-        # progress_remaining: 1.0 (start) --> 0.0 (end)
-        if progress_remaining > (1 - warmup_fraction):
-            # Warmup phase: scale linearly up from 0 to initial_value
-            warmup_progress = (1 - progress_remaining) / warmup_fraction
-            return warmup_progress * initial_value
-        # After warmup: cosine decay from initial_value to min_lr
-        progress = (progress_remaining - (1 - warmup_fraction)) / (1 - warmup_fraction)
-        return min_lr + 0.5 * (initial_value - min_lr) * (1 + np.cos(np.pi * progress))
-    return scheduler
-
-
-# === Env Factory ===
 def make_env(opponent_model=None, use_heuristic=False, device='cpu'):
     def _init():
         return TresetteGymWrapper(
@@ -101,68 +25,146 @@ def make_env(opponent_model=None, use_heuristic=False, device='cpu'):
     return _init
 
 
-# === Training ===
+class WandbLogger:
+    def __init__(self, project_name="tressete-training", config=None):
+        self.project_name = project_name
+        self.config = config
+
+    def log_train_data(self, data: dict, step: int):
+        log_data = {f"train/{k}": float(np.mean(v)) if isinstance(v, (list, np.ndarray)) else v
+                    for k, v in data.items()}
+        wandb.log(log_data, step=step)
+
+    def log_test_data(self, data: dict, step: int):
+        log_data = {f"test/{k}": float(np.mean(v)) if isinstance(v, (list, np.ndarray)) else v
+                    for k, v in data.items()}
+        wandb.log(log_data, step=step)
+
+    def log_update_data(self, data: dict, step: int):
+        log_data = {f"update/{k}": float(np.mean(v)) if isinstance(v, (list, np.ndarray)) else v
+                    for k, v in data.items()}
+        wandb.log(log_data, step=step)
+
+    def save_data(self, data, name, step=None, env_step=None, gradient_step=None):
+        # Optional: save checkpoints or models here if needed
+        pass
+
+
 def main():
     cfg = TrainingConfig()
+    device = cfg.device
 
-    print(f"Using device: {cfg.device}")
-    wandb.init(project="tresette-agent", sync_tensorboard=True)
-    logger = configure(cfg.log_dir, ["stdout", "csv", "tensorboard"])
+    wandb.init(project="tressete-training", config=vars(cfg))
+    wandb_logger = WandbLogger(config=vars(cfg))
 
-    policy_kwargs = dict(
-        features_extractor_class=CustomMLPExtractor,
-        features_extractor_kwargs=dict(features_dim=512, dropout_rate=0.1),
-        net_arch=[dict(pi=[256, 256], vf=[512, 512, 256])],
-        activation_fn=nn.LeakyReLU,
-        ortho_init=True
-    )
-
-    model = PPO(
-        policy=MaskedPolicy,
-        env=DummyVecEnv([make_env(use_heuristic=True, device=cfg.device)]),
-        policy_kwargs=policy_kwargs,
-        verbose=1,
-        tensorboard_log=cfg.tensorboard_log,
-        device=cfg.device,
-        learning_rate=cosine_schedule(cfg.initial_lr, cfg.min_lr),
-        ent_coef=cfg.ent_coef_start,
-        vf_coef=cfg.vf_coef,
-        normalize_advantage=True,
-        target_kl=cfg.kl_coef,
-        gamma=cfg.gamma,
-        gae_lambda=cfg.gae_lambda,
-        n_steps=cfg.n_steps,
-    )
-    model.set_logger(logger)
-
-    checkpoint_callback = CheckpointCallback(save_freq=10_000, save_path=cfg.checkpoint_path)
-
-    current_timesteps = 0
-    opponent_model = None
+    # Initial opponent is heuristic
+    opponent_policy = AdvancedHeuristicPolicy()
     use_heuristic = True
 
-    while current_timesteps < cfg.total_timesteps:
-        next_timesteps = min(current_timesteps + cfg.clone_interval, cfg.total_timesteps)
+    train_envs = DummyVectorEnv([make_env(opponent_policy, use_heuristic=use_heuristic, device=device)
+                                 for _ in range(cfg.num_train_envs)])
+    test_envs = DummyVectorEnv([make_env(opponent_policy, use_heuristic=use_heuristic, device=device)
+                                for _ in range(cfg.num_test_envs)])
 
-        if current_timesteps >= cfg.heuristic_cutoff and use_heuristic:
+    actor_net = TressetteActor(cfg.input_dim, cfg.hidden_dim, cfg.action_dim).to(device)
+    critic_net = CriticMLP(cfg.input_dim, cfg.hidden_dim).to(device)
+    actor = MaskableActor(actor_net).to(device)
+
+    optim = torch.optim.Adam(list(actor.parameters()) + list(critic_net.parameters()), lr=cfg.lr)
+    # Add LR scheduler: decay LR by 0.8 every 50,000 steps
+    scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=50_000, gamma=0.8)
+
+    policy = MaskablePPOPolicy(
+        actor=actor,
+        critic=critic_net,
+        optim=optim,
+        dist_fn=lambda logits: torch.distributions.Categorical(logits=logits),
+        discount_factor=cfg.discount_factor,
+        max_grad_norm=cfg.max_grad_norm,
+        action_space=train_envs.action_space[0]
+    ).to(device)
+
+    train_collector = Collector(policy, train_envs, VectorReplayBuffer(cfg.buffer_size, len(train_envs)))
+    test_collector = Collector(policy, test_envs)
+
+    print(f"Initial collection of {cfg.initial_collect_step} steps with heuristic opponent...")
+    train_collector.collect(n_step=cfg.initial_collect_step)
+
+    total_steps = cfg.initial_collect_step
+    use_heuristic = True
+    current_opponent = opponent_policy
+
+    while total_steps < cfg.max_total_steps:
+        result = train_collector.collect(n_step=cfg.step_per_collect)
+        total_steps += cfg.step_per_collect
+
+        # rew_mean = np.mean(result["rew"]) if hasattr(result["rew"], "__len__") else float(result["rew"])
+        # print(f"Step {total_steps}: Train reward mean: {rew_mean:.3f}")
+
+        wandb_logger.log_train_data(result, total_steps)
+
+        # Update policy only if enough samples in buffer
+        if len(train_collector.buffer) >= cfg.batch_size:
+            for _ in range(cfg.repeat_per_collect):
+                update_result = policy.update(
+                    sample_size=cfg.batch_size * cfg.repeat_per_collect,
+                    buffer=train_collector.buffer,
+                    batch_size=cfg.batch_size,
+                    repeat=1
+                )
+                wandb_logger.log_update_data(update_result, total_steps)
+        else:
+            print(f"Buffer size ({len(train_collector.buffer)}) less than batch size ({cfg.batch_size}), skipping update")
+
+        # Step the LR scheduler after updates
+        scheduler.step()
+
+        # Log current learning rate
+        current_lr = optim.param_groups[0]['lr']
+        wandb.log({"lr": current_lr}, step=total_steps)
+
+        test_result = test_collector.collect(n_episode=cfg.episode_per_test)
+        rew_test_mean = np.mean(test_result["rew"]) if hasattr(test_result["rew"], "__len__") else float(test_result["rew"])
+        wandb_logger.log_test_data({"rew": rew_test_mean}, total_steps)
+        print(f"Step {total_steps}: Test reward mean: {rew_test_mean:.3f}")
+
+        # Switch from heuristic to self-play after cutoff_steps
+        if use_heuristic and total_steps >= cfg.cutoff_steps:
+            print("Switching to self-play: cloning current policy as opponent.")
             use_heuristic = False
-            if os.path.exists(cfg.clone_model_path + ".zip"):
-                opponent_model = PPO.load(cfg.clone_model_path, device=cfg.device)
-            else:
-                print("Clone model not found. Continuing with heuristic.")
+            current_opponent = deepcopy(policy)
 
-        env = DummyVecEnv([make_env(opponent_model, use_heuristic, cfg.device)])
-        model.set_env(env)
+            torch.save(current_opponent.state_dict(), f"clone_opponent_step_{total_steps}.pth")
 
-        model.learn(
-            total_timesteps=cfg.clone_interval,
-            reset_num_timesteps=False,
-            callback=checkpoint_callback
-        )
-        current_timesteps = next_timesteps
-        model.save(cfg.clone_model_path)
+            train_envs = DummyVectorEnv([make_env(current_opponent, use_heuristic=use_heuristic, device=device)
+                                        for _ in range(cfg.num_train_envs)])
+            test_envs = DummyVectorEnv([make_env(current_opponent, use_heuristic=use_heuristic, device=device)
+                                       for _ in range(cfg.num_test_envs)])
 
-    model.save(cfg.final_model_path)
+            train_collector.env = train_envs
+            train_collector.reset()
+
+            test_collector.env = test_envs
+            test_collector.reset()
+
+        # Periodically update the opponent by cloning current policy
+        if not use_heuristic and total_steps % cfg.clone_interval == 0:
+            print(f"Step {total_steps}: Cloning policy as new opponent for self-play.")
+            current_opponent = deepcopy(policy)
+
+            torch.save(current_opponent.state_dict(), f"clone_opponent_step_{total_steps}.pth")
+
+            train_envs = DummyVectorEnv([make_env(current_opponent, use_heuristic=use_heuristic, device=device)
+                                        for _ in range(cfg.num_train_envs)])
+            test_envs = DummyVectorEnv([make_env(current_opponent, use_heuristic=use_heuristic, device=device)
+                                       for _ in range(cfg.num_test_envs)])
+
+            train_collector.env = train_envs
+            train_collector.reset()
+
+            test_collector.env = test_envs
+            test_collector.reset()
+
     wandb.finish()
 
 
