@@ -64,7 +64,9 @@ class EncodedState:
         state[203] = cards_left_in_deck / 40.0  # Normalize (max 40 cards in deck)
 
         # --- 8. Append valid action mask (10 binary flags) ---
-        valid_actions = gym_env.env.get_valid_actions()  # Use env method for consistency
+        # valid_actions = gym_env.env.get_valid_actions()  # Use env method for consistency
+        player = gym_env.env.players[player_index]
+        valid_actions = player.get_valid_moves(trick.lead_suit)
         valid_action_mask = np.zeros(10, dtype=np.float32)
         for i in valid_actions:
             if 0 <= i < 10:

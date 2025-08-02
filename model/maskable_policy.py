@@ -63,12 +63,15 @@ class MaskablePPOPolicy(PPOPolicy):
     def predict(self, obs, mask=None, deterministic=False):
         self.eval()
         with torch.no_grad():
-            output = self.actor(obs)
-            logits = output[0] if isinstance(output, tuple) else output
+            logits = self.actor(obs)
+            if isinstance(logits, tuple):
+                logits = logits[0]  # e.g., (logits, value)
 
             if mask is not None:
-                # Mask invalid actions by setting their logits to a very low value
-                logits = logits.masked_fill(~mask, -1e9)
+                logits = logits.clone()
+                if logits.dim() == 2 and mask.dim() == 1:
+                    mask = mask.unsqueeze(0)
+                logits[~mask] = -1e9  # mask out invalid actions
 
             dist = torch.distributions.Categorical(logits=logits)
             if deterministic:

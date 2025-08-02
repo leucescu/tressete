@@ -1,3 +1,4 @@
+import torch
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
@@ -95,8 +96,15 @@ class TresetteGymWrapper(gym.Env):
         if self.opponent_policy == "heuristic":
             action = AdvancedHeuristicPolicy.get_action_index(self.env)
         elif self.opponent_model:
-            action, _ = self.opponent_model.predict(self.state_encoder.opponent_state, deterministic=True)
+            obs = torch.tensor(self.state_encoder.opponent_state, dtype=torch.float32).unsqueeze(0)
+
             valid_actions = self.env.get_valid_actions()
+            mask = torch.zeros(self.action_space.n, dtype=torch.bool)
+            mask[valid_actions] = True
+            # mask = torch.tensor(self.state_encoder.opponent_state[-10:], dtype=torch.float32).unsqueeze(0)
+
+            opponent_model_action, _ = self.opponent_model.predict(obs, mask=mask, deterministic=True)
+            action = opponent_model_action[0]
             if action not in valid_actions:
                 raise ValueError(f"Invalid opponent action {action}. Valid actions: {valid_actions}")
 

@@ -44,6 +44,6 @@ class TrainingConfig:
         
         self.max_total_steps = 200_000
         
-        self.clone_interval = 1_000
+        self.clone_interval = 50_000
         
-        self.cutoff_steps = 1_000
+        self.cutoff_steps = 50_000
