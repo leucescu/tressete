@@ -93,7 +93,13 @@ class TresetteGymWrapper(gym.Env):
             return reward / 7.5  # Normalize
 
     def _play_opponent_action(self):
-        if self.opponent_policy == "heuristic":
+        if self.opponent_policy == "random":
+            action = RandomPolicy.get_action_index(self.env)
+        elif self.opponent_policy == "highest_lead":
+            action = HighestLeadSuitPolicy.get_action_index(self.env)
+        elif self.opponent_policy == "simple_heuristic":
+            action = SimpleHeuristicPolicy.get_action_index(self.env)
+        elif self.opponent_policy == "advanced_heuristic":
             action = AdvancedHeuristicPolicy.get_action_index(self.env)
         elif self.opponent_model:
             obs = torch.tensor(self.state_encoder.opponent_state, dtype=torch.float32).unsqueeze(0)

@@ -46,6 +46,22 @@ class TrainingConfig:
         
         self.clone_interval = 1_000_000
         
-        self.cutoff_steps = 1_000_000
+        self.cutoff_steps = 150_000
 
         self.test_interval = 5000  # Test every 1000 steps
+
+        # Regularization to prevent overfitting
+
+        # Improves generalization by penalizing large weights
+
+        # Helps stabilize training against noisy gradients
+        self.weight_decay = 1e-4
+        
+        # Curriculum learning stages
+        self.curriculum_stages = {
+            0: 0,               # Stage 0: RandomPolicy (0-10k steps)
+            5000: 1,           # Stage 1: HighestLeadSuitPolicy (10k-20k steps)
+            15000: 2,           # Stage 2: SimpleHeuristicPolicy (20k-30k steps)
+            30000: 3,           # Stage 3: AdvancedHeuristicPolicy (30k+ steps)
+            self.cutoff_steps: 4 # Stage 4: Self-play
+        }
