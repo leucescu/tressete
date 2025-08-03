@@ -9,62 +9,10 @@ from tianshou.env import DummyVectorEnv
 from model.model import CriticMLP
 from model.training_config import TrainingConfig
 from model.gym_wrapper import TresetteGymWrapper
-from model.maskable_policy import MaskableActor, MaskablePPOPolicy
+from model.maskable_policy import MaskableActor, CustomMaskablePPOPolicy
 from model.tressete_actor import TressetteActor
 from env.baseline_policies import AdvancedHeuristicPolicy
-
-class CustomMaskablePPOPolicy(MaskablePPOPolicy):
-    def learn(self, batch, batch_size, repeat, **kwargs):
-        # Pre-update metrics
-        with torch.no_grad():
-            # Compute old value estimates
-            old_values = self.critic(batch.obs).flatten()
-            returns = batch.returns
-            
-            # Compute explained variance (old)
-            variance = torch.var(returns)
-            ev_old = 1 - torch.var(returns - old_values) / (variance + 1e-8) if variance > 1e-8 else torch.nan
-            
-            # Get old logits from actor
-            old_logits, _ = self.actor(batch.obs)
-
-        # Perform the PPO update with gradient clipping
-        result = super().learn(batch, batch_size, repeat, **kwargs)
-        
-        # Post-update metrics
-        with torch.no_grad():
-            # Compute new value estimates
-            new_values = self.critic(batch.obs).flatten()
-            
-            # Compute explained variance (new)
-            variance = torch.var(returns)
-            ev_new = 1 - torch.var(returns - new_values) / (variance + 1e-8) if variance > 1e-8 else torch.nan
-            
-            # Compute KL divergence
-            new_logits, _ = self.actor(batch.obs)
-            
-            # Create distributions
-            old_dist = torch.distributions.Categorical(logits=old_logits)
-            new_dist = torch.distributions.Categorical(logits=new_logits)
-            
-            # Calculate KL divergence
-            kl = torch.distributions.kl.kl_divergence(old_dist, new_dist).mean().item()
-        
-        # Convert to Python floats for logging
-        result.update({
-            # KL divergence (Kullback-Leibler divergence) measures how much one probability distribution differs from another. In PPO:
-            # It quantifies how much the updated policy has changed from the old policy
-            #   *Low KL (0.01-0.05) indicates stable learning
-            #   *High KL (>0.1) suggests policy is changing too rapidly, risking instability
-            #   *Near-zero KL means policy isn't learning
-            'kl': kl,
-            # Explained variance of the value function before the update
-            'ev_old': ev_old,
-            # Explained variance of the value function after the update
-            'ev_new': ev_new
-            # If EV_new < EV_old, the update degraded value predictions
-        })
-        return result
+from utils.wandb_logger import WandbLogger
 
 def make_env(opponent_model=None, use_heuristic=False, device='cpu'):
     def _init():
@@ -95,29 +43,6 @@ def clone_policy(original_policy, cfg, device):
 
     cloned_policy.eval()
     return cloned_policy
-
-class WandbLogger:
-    def __init__(self, project_name="tressete-training", config=None):
-        self.project_name = project_name
-        self.config = config
-
-    def log_train_data(self, data: dict, step: int):
-        log_data = {f"train/{k}": float(np.mean(v)) if isinstance(v, (list, np.ndarray)) else v
-                    for k, v in data.items()}
-        wandb.log(log_data, step=step)
-
-    def log_test_data(self, data: dict, step: int):
-        log_data = {f"test/{k}": float(np.mean(v)) if isinstance(v, (list, np.ndarray)) else v
-                    for k, v in data.items()}
-        wandb.log(log_data, step=step)
-
-    def log_update_data(self, data: dict, step: int):
-        log_data = {f"update/{k}": float(np.mean(v)) if isinstance(v, (list, np.ndarray)) else v
-                    for k, v in data.items()}
-        wandb.log(log_data, step=step)
-
-    def save_data(self, data, name, step=None, env_step=None, gradient_step=None):
-        pass
 
 def main():
     cfg = TrainingConfig()
@@ -156,45 +81,53 @@ def main():
 
     print(f"Initial collection of {cfg.initial_collect_step} steps with heuristic opponent...")
     train_collector.collect(n_step=cfg.initial_collect_step)
-
     total_steps = cfg.initial_collect_step
 
     while total_steps < cfg.max_total_steps:
+        # Collect experience
         result = train_collector.collect(n_step=cfg.step_per_collect)
         total_steps += cfg.step_per_collect
-
         wandb_logger.log_train_data(result, total_steps)
 
-    if len(train_collector.buffer) >= cfg.batch_size:
-        for update_idx in range(cfg.repeat_per_collect):
-            update_result = policy.update(
-                sample_size=cfg.batch_size,
-                buffer=train_collector.buffer,
-                batch_size=cfg.batch_size,
-                repeat=1
-            )
-            wandb_logger.log_update_data(update_result, total_steps)
-            
-            # Print metrics every 5,000 steps
-            if total_steps % 5000 == 0 and update_idx == 0:  # Only first update in the cycle
-                kl_val = update_result.get('kl', float('nan'))
-                ev_old_val = update_result.get('ev_old', float('nan'))
-                ev_new_val = update_result.get('ev_new', float('nan'))
+        # Only perform updates if buffer has enough data
+        if len(train_collector.buffer) >= cfg.batch_size:
+            for update_idx in range(cfg.repeat_per_collect):
+                update_result = policy.update(
+                    sample_size=cfg.batch_size,
+                    buffer=train_collector.buffer,
+                    batch_size=cfg.batch_size,
+                    repeat=1
+                )
                 
-                print(f"\nStep {total_steps} Update Metrics:")
-                print(f"  KL Divergence: {kl_val:.4f}")
-                print(f"  Explained Variance (Old): {ev_old_val:.4f}")
-                print(f"  Explained Variance (New): {ev_new_val:.4f}")
-                print(f"  Value Improvement: {ev_new_val - ev_old_val:+.4f}")
+                # Convert metrics to Python floats (handles NaN properly)
+                metrics = {
+                    'kl': update_result.get('kl', float('nan')),
+                    'ev_old': update_result.get('ev_old', float('nan')),
+                    'ev_new': update_result.get('ev_new', float('nan'))
+                }
+                
+                wandb_logger.log_update_data(metrics, total_steps)
+                
+                # Print metrics every 5,000 steps
+                if total_steps % 5000 == 0 and update_idx == 0:
+                    print(f"\n--- Step {total_steps} Update Metrics ---")
+                    print(f"KL Divergence:      {metrics['kl']:.4f} (Target: 0.01-0.05)")
+                    print(f"EV (Before Update): {metrics['ev_old']:.4f} (1.0 = perfect prediction)")
+                    print(f"EV (After Update):  {metrics['ev_new']:.4f} (1.0 = perfect prediction)")
+                    print(f"Value Improvement:  {metrics['ev_new'] - metrics['ev_old']:+.4f}")
 
+        # These should be OUTSIDE the update if-block but INSIDE the while-loop
         scheduler.step()
         wandb.log({"lr": optim.param_groups[0]['lr']}, step=total_steps)
 
-        test_result = test_collector.collect(n_episode=cfg.episode_per_test)
-        rew_test_mean = np.mean(test_result["rew"]) if hasattr(test_result["rew"], "__len__") else float(test_result["rew"])
-        wandb_logger.log_test_data({"rew": rew_test_mean}, total_steps)
-        print(f"Step {total_steps}: Test reward mean: {rew_test_mean:.3f}")
+        # Test performance periodically
+        if total_steps % cfg.test_interval == 0:
+            test_result = test_collector.collect(n_episode=cfg.episode_per_test)
+            rew_test_mean = np.mean(test_result["rew"]) if hasattr(test_result["rew"], "__len__") else float(test_result["rew"])
+            wandb_logger.log_test_data({"rew": rew_test_mean}, total_steps)
+            print(f"Step {total_steps}: Test reward mean: {rew_test_mean:.3f}")
 
+        # Self-play opponent switching
         if use_heuristic and total_steps >= cfg.cutoff_steps:
             print("Switching to self-play: cloning current policy as opponent.")
             use_heuristic = False
@@ -206,11 +139,9 @@ def main():
             test_envs = DummyVectorEnv([make_env(current_opponent, use_heuristic=use_heuristic, device=device)
                                         for _ in range(cfg.num_test_envs)])
             train_collector.env = train_envs
-            train_collector.reset()
             test_collector.env = test_envs
-            test_collector.reset()
 
-        if not use_heuristic and total_steps % cfg.clone_interval == 0:
+        elif not use_heuristic and total_steps % cfg.clone_interval == 0:
             print(f"Step {total_steps}: Cloning policy as new opponent for self-play.")
             current_opponent = clone_policy(policy, cfg, device)
             torch.save(current_opponent.state_dict(), f"trained_models/clone_opponent_step_{total_steps}.pth")
@@ -220,9 +151,7 @@ def main():
             test_envs = DummyVectorEnv([make_env(current_opponent, use_heuristic=False, device=device)
                                         for _ in range(cfg.num_test_envs)])
             train_collector.env = train_envs
-            train_collector.reset()
             test_collector.env = test_envs
-            test_collector.reset()
 
     wandb.finish()
 

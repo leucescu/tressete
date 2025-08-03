@@ -103,3 +103,56 @@ class MaskablePPOPolicy(PPOPolicy):
             action = logits.argmax(dim=-1)
         
         return Batch(logits=logits, act=action, state=state, dist=dist, value=value)
+    
+class CustomMaskablePPOPolicy(MaskablePPOPolicy):
+    def learn(self, batch, batch_size, repeat, **kwargs):
+        # Pre-update metrics
+        with torch.no_grad():
+            # Compute old value estimates
+            old_values = self.critic(batch.obs).flatten()
+            returns = batch.returns
+            
+            # Compute explained variance (old)
+            variance = torch.var(returns)
+            ev_old = 1 - torch.var(returns - old_values) / (variance + 1e-8) if variance > 1e-8 else torch.nan
+            
+            # Get old logits from actor
+            old_logits, _ = self.actor(batch.obs)
+
+        # Perform the PPO update with gradient clipping
+        result = super().learn(batch, batch_size, repeat, **kwargs)
+        
+        # Post-update metrics
+        with torch.no_grad():
+            # Compute new value estimates
+            new_values = self.critic(batch.obs).flatten()
+            
+            # Compute explained variance (new)
+            variance = torch.var(returns)
+            ev_new = 1 - torch.var(returns - new_values) / (variance + 1e-8) if variance > 1e-8 else torch.nan
+            
+            # Compute KL divergence
+            new_logits, _ = self.actor(batch.obs)
+            
+            # Create distributions
+            old_dist = torch.distributions.Categorical(logits=old_logits)
+            new_dist = torch.distributions.Categorical(logits=new_logits)
+            
+            # Calculate KL divergence
+            kl = torch.distributions.kl.kl_divergence(old_dist, new_dist).mean().item()
+        
+        # Convert to Python floats for logging
+        result.update({
+            # KL divergence (Kullback-Leibler divergence) measures how much one probability distribution differs from another. In PPO:
+            # It quantifies how much the updated policy has changed from the old policy
+            #   *Low KL (0.01-0.05) indicates stable learning
+            #   *High KL (>0.1) suggests policy is changing too rapidly, risking instability
+            #   *Near-zero KL means policy isn't learning
+            'kl': kl,
+            # Explained variance of the value function before the update
+            'ev_old': ev_old,
+            # Explained variance of the value function after the update
+            'ev_new': ev_new
+            # If EV_new < EV_old, the update degraded value predictions
+        })
+        return result

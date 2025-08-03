@@ -47,3 +47,5 @@ class TrainingConfig:
         self.clone_interval = 1_000_000
         
         self.cutoff_steps = 1_000_000
+
+        self.test_interval = 5000  # Test every 1000 steps
