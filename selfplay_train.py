@@ -13,6 +13,59 @@ from model.maskable_policy import MaskableActor, MaskablePPOPolicy
 from model.tressete_actor import TressetteActor
 from env.baseline_policies import AdvancedHeuristicPolicy
 
+class CustomMaskablePPOPolicy(MaskablePPOPolicy):
+    def learn(self, batch, batch_size, repeat, **kwargs):
+        # Pre-update metrics
+        with torch.no_grad():
+            # Compute old value estimates
+            old_values = self.critic(batch.obs).flatten()
+            returns = batch.returns
+            
+            # Compute explained variance (old)
+            variance = torch.var(returns)
+            ev_old = 1 - torch.var(returns - old_values) / (variance + 1e-8) if variance > 1e-8 else torch.nan
+            
+            # Get old logits from actor
+            old_logits, _ = self.actor(batch.obs)
+
+        # Perform the PPO update with gradient clipping
+        result = super().learn(batch, batch_size, repeat, **kwargs)
+        
+        # Post-update metrics
+        with torch.no_grad():
+            # Compute new value estimates
+            new_values = self.critic(batch.obs).flatten()
+            
+            # Compute explained variance (new)
+            variance = torch.var(returns)
+            ev_new = 1 - torch.var(returns - new_values) / (variance + 1e-8) if variance > 1e-8 else torch.nan
+            
+            # Compute KL divergence
+            new_logits, _ = self.actor(batch.obs)
+            
+            # Create distributions
+            old_dist = torch.distributions.Categorical(logits=old_logits)
+            new_dist = torch.distributions.Categorical(logits=new_logits)
+            
+            # Calculate KL divergence
+            kl = torch.distributions.kl.kl_divergence(old_dist, new_dist).mean().item()
+        
+        # Convert to Python floats for logging
+        result.update({
+            # KL divergence (Kullback-Leibler divergence) measures how much one probability distribution differs from another. In PPO:
+            # It quantifies how much the updated policy has changed from the old policy
+            #   *Low KL (0.01-0.05) indicates stable learning
+            #   *High KL (>0.1) suggests policy is changing too rapidly, risking instability
+            #   *Near-zero KL means policy isn't learning
+            'kl': kl,
+            # Explained variance of the value function before the update
+            'ev_old': ev_old,
+            # Explained variance of the value function after the update
+            'ev_new': ev_new
+            # If EV_new < EV_old, the update degraded value predictions
+        })
+        return result
+
 def make_env(opponent_model=None, use_heuristic=False, device='cpu'):
     def _init():
         return TresetteGymWrapper(
@@ -30,7 +83,7 @@ def clone_policy(original_policy, cfg, device):
     actor.load_state_dict(original_policy.actor.state_dict())
     critic_net.load_state_dict(original_policy.critic.state_dict())
 
-    cloned_policy = MaskablePPOPolicy(
+    cloned_policy = CustomMaskablePPOPolicy(
         actor=actor,
         critic=critic_net,
         optim=None,
@@ -88,7 +141,7 @@ def main():
     optim = torch.optim.Adam(list(actor.parameters()) + list(critic_net.parameters()), lr=cfg.lr)
     scheduler = torch.optim.lr_scheduler.StepLR(optim, step_size=50_000, gamma=0.8)
 
-    policy = MaskablePPOPolicy(
+    policy = CustomMaskablePPOPolicy(
         actor=actor,
         critic=critic_net,
         optim=optim,
@@ -112,17 +165,27 @@ def main():
 
         wandb_logger.log_train_data(result, total_steps)
 
-        if len(train_collector.buffer) >= cfg.batch_size:
-            for _ in range(cfg.repeat_per_collect):
-                update_result = policy.update(
-                    sample_size=cfg.batch_size * cfg.repeat_per_collect,
-                    buffer=train_collector.buffer,
-                    batch_size=cfg.batch_size,
-                    repeat=1
-                )
-                wandb_logger.log_update_data(update_result, total_steps)
-        else:
-            print(f"Buffer size ({len(train_collector.buffer)}) less than batch size ({cfg.batch_size}), skipping update")
+    if len(train_collector.buffer) >= cfg.batch_size:
+        for update_idx in range(cfg.repeat_per_collect):
+            update_result = policy.update(
+                sample_size=cfg.batch_size,
+                buffer=train_collector.buffer,
+                batch_size=cfg.batch_size,
+                repeat=1
+            )
+            wandb_logger.log_update_data(update_result, total_steps)
+            
+            # Print metrics every 5,000 steps
+            if total_steps % 5000 == 0 and update_idx == 0:  # Only first update in the cycle
+                kl_val = update_result.get('kl', float('nan'))
+                ev_old_val = update_result.get('ev_old', float('nan'))
+                ev_new_val = update_result.get('ev_new', float('nan'))
+                
+                print(f"\nStep {total_steps} Update Metrics:")
+                print(f"  KL Divergence: {kl_val:.4f}")
+                print(f"  Explained Variance (Old): {ev_old_val:.4f}")
+                print(f"  Explained Variance (New): {ev_new_val:.4f}")
+                print(f"  Value Improvement: {ev_new_val - ev_old_val:+.4f}")
 
         scheduler.step()
         wandb.log({"lr": optim.param_groups[0]['lr']}, step=total_steps)
