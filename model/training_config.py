@@ -31,7 +31,7 @@ class TrainingConfig:
         
         # Collection parameters
         self.max_total_steps = 3000000
-        self.initial_collect_step = 2000
+        self.initial_collect_step = 2048
         self.step_per_collect = 100
         self.repeat_per_collect = 4
         self.batch_size = 512

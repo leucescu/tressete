@@ -8,7 +8,7 @@ from env.baseline_policies import AdvancedHeuristicPolicy, SimpleHeuristicPolicy
 
 
 class TresetteGymWrapper(gym.Env):
-    def __init__(self, opponent_model=None, opponent_policy="heuristic", device='cpu'):
+    def __init__(self, opponent_model=None, opponent_policy="advanced_heuristic", device='cpu'):
         super().__init__()
         self.env = TresetteEngine()
         self.agent_index = 0
@@ -17,6 +17,7 @@ class TresetteGymWrapper(gym.Env):
         self.device = device
         self.state_encoder = EncodedState()
         self.agents_reward_for_next_turn = 0.0
+        self.step_count = 0
 
         # Action and observation space
         self.action_space = spaces.Discrete(10)
@@ -42,6 +43,7 @@ class TresetteGymWrapper(gym.Env):
         self.state_encoder.update_player_state(self)
         obs = self._get_obs()
         self.agents_reward_for_next_turn = 0.0
+        self.step_count = 0
 
         # Get mask from the encoded state of the current player
         if self.env.current_player == self.agent_index:
@@ -59,8 +61,8 @@ class TresetteGymWrapper(gym.Env):
             self._play_opponent_action()
 
         terminated = False
-        if self.env.done:
-            terminated = True
+        truncated = self.step_count >= 40
+        terminated = self.env.done or truncated
         reward = self._get_reward(self.env.done)
 
         self.state_encoder.update_player_state(self)
@@ -70,9 +72,10 @@ class TresetteGymWrapper(gym.Env):
         else:
             mask = self.state_encoder.opponent_state[-10:]
 
-        truncated = False
         # Get the observation after the step
         obs = self._get_obs()
+        if self.env.done:
+            pass
 
         return {"obs": obs, "action_mask": mask}, reward, terminated, truncated, {}
 
@@ -89,16 +92,17 @@ class TresetteGymWrapper(gym.Env):
             self.agents_reward_for_next_turn = 0.0
             if done:
                 agent_pts = self.env.players[self.agent_index].num_pts
-                reward += (agent_pts - 5.5) * 1.5
+                # reward += (agent_pts - 5.5) * 1.5
+                reward += (agent_pts - 7)
                 # Add higher reward for great game
                 if self.env.players[self.agent_index].num_pts > 8.0:
-                    reward += 5
+                    reward += 1
                 if self.env.players[self.agent_index].num_pts > 9.0:
-                    reward += 10
+                    reward += 2
                 if self.env.players[self.agent_index].num_pts > 10:
-                    reward += 20
+                    reward += 4
             
-            return reward / 7.5  # Normalize
+            return reward / 11.0 # Normalize reward to be between 0 and 1
 
     def _play_opponent_action(self):
         if self.opponent_policy == "random":

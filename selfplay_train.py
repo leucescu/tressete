@@ -31,6 +31,7 @@ def clone_policy(original_policy, cfg, device):
     actor_net = TressetteActor(cfg.input_dim, cfg.hidden_dim, cfg.action_dim).to(device)
     critic_net = CriticMLP(cfg.input_dim, cfg.hidden_dim).to(device)
     actor = MaskableActor(actor_net).to(device)
+
     
     # Direct state transfer
     cloned_policy = CustomMaskablePPOPolicy(
@@ -93,17 +94,23 @@ def get_heuristic_policy(stage):
     }
     return policies.get(min(stage, 3), "advanced_heuristic")
 
-def evaluate_win_rate(collector, num_episodes=100):
-    """Calculate win rate against current opponent"""
+def evaluate_win_rate(collector, num_episodes=96):
     results = collector.collect(n_episode=num_episodes)
-    rewards = results.get("rews", [])
-    
-    if len(rewards) == 0:
-        print("Warning: No rewards collected during evaluation!")
+    rews = results.get("rews", [])
+    lens = results.get("lens", [])
+
+    if len(rews) == 0 or len(lens) == 0:
+        print("Warning: No data collected!")
         return 0.0
-        
-    wins = sum(1 for r in rewards if r > 0)
-    return wins / num_episodes
+
+    wins = 0
+    total_episodes = len(rews)
+
+    for episode_rewards, episode_dones in zip(rews, lens):
+        if episode_dones and episode_rewards > 0:
+            wins += 1
+
+    return wins / total_episodes
 
 def should_advance_stage(current_stage, total_steps, win_rate, cfg, stage_entered_steps):
     """Check if we should advance to next curriculum stage with stabilization"""

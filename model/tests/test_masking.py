@@ -180,8 +180,8 @@ def test_training_loop_runs_without_errors():
 
     device = "cpu"
 
-    train_envs = DummyVectorEnv([TresetteGymWrapper])
-    test_envs = DummyVectorEnv([TresetteGymWrapper])
+    train_envs = DummyVectorEnv([lambda: TresetteGymWrapper(opponent_policy="advanced_heuristic")])
+    test_envs = DummyVectorEnv([lambda: TresetteGymWrapper(opponent_policy="advanced_heuristic")])
 
     actor_net = TressetteActor(input_dim=cfg.input_dim, hidden_dim=cfg.hidden_dim, action_dim=cfg.action_dim).to(device)
     critic_net = CriticMLP(input_dim=cfg.input_dim, hidden_dim=cfg.hidden_dim).to(device)
