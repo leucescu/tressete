@@ -27,7 +27,7 @@ class TrainingConfig:
         self.min_steps_per_stage = [5000, 10000, 15000, 20000]
         self.min_stage_duration = 20000  # Minimum steps per stage
         self.eval_episodes = 50
-        self.clone_interval = 15000
+        self.clone_interval = 5000
         
         # Collection parameters
         self.max_total_steps = 3000000

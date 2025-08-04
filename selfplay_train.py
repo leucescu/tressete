@@ -232,23 +232,36 @@ def main():
                     if isinstance(loss, list):
                         loss = np.mean(loss)
 
+                if not nan_detected:
+                    lossv = update_result.get('loss/vf', [float('nan')])
+                    if isinstance(loss, list):
+                        lossv = np.mean(lossv)
+
+                if not nan_detected:
+                    loss_ent = update_result.get('loss/ent', [float('nan')])
+                    if isinstance(loss, list):
+                        loss_ent = np.mean(loss_ent)
+        
                     metrics = {
                         'kl': update_result.get('kl', float('nan')),
                         'ev_old': update_result.get('ev_old', float('nan')),
                         'ev_new': update_result.get('ev_new', float('nan')),
                         'loss': loss,
-                        'loss_v': update_result.get('loss/v', float('nan'))
+                        'loss_vf': lossv,
+                        'loss_ent': loss_ent,
                     }
                     wandb_logger.log_update_data(metrics, total_steps)
                     
                     # Print metrics periodically
-                    if total_steps % 5000 == 0 and update_idx == 0:
+                    # if total_steps % 5000 == 0 and update_idx == 0:
+                    if total_steps % 5000 == 0:
                         print(f"\n--- Step {total_steps} Update Metrics ---")
                         print(f"KL Divergence:      {metrics['kl']:.6f}")
                         print(f"EV (Before Update): {metrics['ev_old']:.4f}")
                         print(f"EV (After Update):  {metrics['ev_new']:.4f}")
-                        print(f"Value Loss:         {metrics['loss_v']:.6f}")
+                        print(f"Value Loss:         {sum(metrics['loss_vf']) / len(metrics['loss_vf']):.6f}")
                         print(f"Total Loss:         {metrics['loss']:.6f}")
+                        print(f"Entropy loss:       {sum(metrics['loss_ent']) / len(metrics['loss_ent']):.6f}")
 
         # Update learning rate
         scheduler.step()

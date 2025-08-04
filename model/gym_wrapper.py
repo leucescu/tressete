@@ -32,7 +32,9 @@ class TresetteGymWrapper(gym.Env):
             encoded = self.state_encoder.agent_state
         else:
             encoded = self.state_encoder.opponent_state
-
+        if np.isnan(encoded).any():
+            print("WARNING: NaN in state encoding!")
+            encoded = np.nan_to_num(encoded, nan=0.0)
         if not isinstance(encoded, np.ndarray) or encoded.shape != (214,):
             raise ValueError(f"Encoded state must be a numpy array of shape (214,), got {type(encoded)} with shape {getattr(encoded, 'shape', None)}")
         return encoded
@@ -94,13 +96,14 @@ class TresetteGymWrapper(gym.Env):
                 agent_pts = self.env.players[self.agent_index].num_pts
                 # reward += (agent_pts - 5.5) * 1.5
                 reward += (agent_pts - 7)
-                # Add higher reward for great game
-                if self.env.players[self.agent_index].num_pts > 8.0:
-                    reward += 1
-                if self.env.players[self.agent_index].num_pts > 9.0:
-                    reward += 2
-                if self.env.players[self.agent_index].num_pts > 10:
-                    reward += 4
+                # Add higher reward for great game, so far added only for advanced heuristic policy
+                if self.opponent_policy == "advanced_heuristic":
+                    if self.env.players[self.agent_index].num_pts > 8.0:
+                        reward += 1
+                    if self.env.players[self.agent_index].num_pts > 9.0:
+                        reward += 2
+                    if self.env.players[self.agent_index].num_pts > 10:
+                        reward += 4
             
             return reward / 11.0 # Normalize reward to be between 0 and 1
 

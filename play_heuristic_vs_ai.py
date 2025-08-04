@@ -82,7 +82,7 @@ def main():
     device = 'cpu'
     cfg = TrainingConfig()
 
-    agent_policy_path = "trained_models/final_policy.pth"
+    agent_policy_path = "trained_models/clone_opponent_step_80000.pth"
     agent_policy = load_policy_checkpoint(agent_policy_path, cfg, device)
 
     dummy_env = TresetteGymWrapper()
@@ -91,7 +91,7 @@ def main():
     use_heuristic_opponent = True
     opponent_policy = None
     if not use_heuristic_opponent:
-        opponent_policy_path = "trained_models/final_policy.pth"
+        opponent_policy_path = "trained_models/clone_opponent_step_80000.pth"
         opponent_policy = load_policy_checkpoint(opponent_policy_path, cfg, device)
         opponent_policy.action_space = dummy_env.action_space
 
