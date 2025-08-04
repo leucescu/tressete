@@ -2,7 +2,7 @@ import torch
 import numpy as np
 
 from model.gym_wrapper import TresetteGymWrapper
-from model.maskable_policy import MaskableActor, MaskablePPOPolicy
+from model.maskable_policy import MaskableActor, CustomMaskablePPOPolicy
 from model.tressete_actor import TressetteActor
 from model.model import CriticMLP
 from model.training_config import TrainingConfig
@@ -13,7 +13,7 @@ def load_policy_checkpoint(path, cfg, device):
     critic_net = CriticMLP(cfg.input_dim, cfg.hidden_dim).to(device)
     actor = MaskableActor(actor_net).to(device)
 
-    policy = MaskablePPOPolicy(
+    policy = CustomMaskablePPOPolicy(
         actor=actor,
         critic=critic_net,
         optim=None,
@@ -32,7 +32,7 @@ def load_policy_checkpoint(path, cfg, device):
 def play_single_game(agent_policy, opponent_policy=None, use_heuristic_opponent=True, device='cpu'):
     env = TresetteGymWrapper(
         opponent_model=opponent_policy if not use_heuristic_opponent else None,
-        opponent_policy="heuristic" if use_heuristic_opponent else None,
+        opponent_policy="advanced_heuristic" if use_heuristic_opponent else None,
         device=device
     )
     obs_dict, _ = env.reset()
@@ -82,7 +82,7 @@ def main():
     device = 'cpu'
     cfg = TrainingConfig()
 
-    agent_policy_path = "trained_models/clone_opponent_step_1000000.pth"
+    agent_policy_path = "trained_models/final_policy.pth"
     agent_policy = load_policy_checkpoint(agent_policy_path, cfg, device)
 
     dummy_env = TresetteGymWrapper()
@@ -91,7 +91,7 @@ def main():
     use_heuristic_opponent = True
     opponent_policy = None
     if not use_heuristic_opponent:
-        opponent_policy_path = "trained_models/clone_opponent_step_1000000.pth"
+        opponent_policy_path = "trained_models/final_policy.pth"
         opponent_policy = load_policy_checkpoint(opponent_policy_path, cfg, device)
         opponent_policy.action_space = dummy_env.action_space
 

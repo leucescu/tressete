@@ -89,7 +89,15 @@ class TresetteGymWrapper(gym.Env):
             self.agents_reward_for_next_turn = 0.0
             if done:
                 agent_pts = self.env.players[self.agent_index].num_pts
-                reward += (agent_pts - 5.5)
+                reward += (agent_pts - 5.5) * 1.5
+                # Add higher reward for great game
+                if self.env.players[self.agent_index].num_pts > 8.0:
+                    reward += 5
+                if self.env.players[self.agent_index].num_pts > 9.0:
+                    reward += 10
+                if self.env.players[self.agent_index].num_pts > 10:
+                    reward += 20
+            
             return reward / 7.5  # Normalize
 
     def _play_opponent_action(self):
@@ -107,7 +115,6 @@ class TresetteGymWrapper(gym.Env):
             valid_actions = self.env.get_valid_actions()
             mask = torch.zeros(self.action_space.n, dtype=torch.bool)
             mask[valid_actions] = True
-            # mask = torch.tensor(self.state_encoder.opponent_state[-10:], dtype=torch.float32).unsqueeze(0)
 
             opponent_model_action, _ = self.opponent_model.predict(obs, mask=mask, deterministic=True)
             action = opponent_model_action[0]

@@ -3,65 +3,49 @@ import torch
 class TrainingConfig:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.input_dim = 214  # as per your encoder output size
-        self.action_dim = 10  # number of actions in your environment
         
-        # Smaller hidden dims may help with stability, but 512 is okay if you have enough data
-        self.hidden_dim = 256  
-        self.actor_feature_dim = 128
-        
-        # Lower learning rate to reduce training instability
-        self.lr = 3e-4  
-        
-        self.discount_factor = 0.99
-        
-        # Gradient clipping max norm (keep the same or slightly stricter)
-        self.max_grad_norm = 0.5  
-        
-        self.estimation_step = 3
         self.num_train_envs = 8
-        self.num_test_envs = 8
+        self.num_test_envs = 4
+        self.buffer_size = 20000
         
-        # Increase epochs to allow more stable learning over smaller batches
-        self.max_epoch = 100  
+        # Training parameters
+        self.lr = 3e-4
+        self.weight_decay = 1e-5
+        self.discount_factor = 0.99
+        self.max_grad_norm = 0.5
+        self.vf_coef = 0.3
+        self.eps_clip = 0.2
+        self.action_dim = 10
+        self.input_dim = 214
+        self.hidden_dim = 128
         
-        # Fewer steps per epoch but more epochs to avoid sudden big jumps
-        self.step_per_epoch = 500  
+        # Curriculum parameters
+        self.random_win_rate = 0.85
+        self.highest_lead_win_rate = 0.80
+        self.simple_heuristic_win_rate = 0.75
+        self.advanced_heuristic_win_rate = 0.70
+        self.min_steps_per_stage = [5000, 10000, 15000, 20000]
+        self.min_stage_duration = 20000  # Minimum steps per stage
+        self.eval_episodes = 50
+        self.clone_interval = 15000
         
-        # Repeat per collect: you can reduce this to lower variance in updates
-        self.repeat_per_collect = 2  
-        
-        self.episode_per_test = 10
-        
-        self.batch_size = 64  # could increase to 128 if memory allows
-        
-        self.step_per_collect = 100  # collect less data per update for smoother learning
-        
+        # Collection parameters
+        self.max_total_steps = 3000000
         self.initial_collect_step = 2000
+        self.step_per_collect = 100
+        self.repeat_per_collect = 4
+        self.batch_size = 512
+        self.mini_batch_size = 128
+        self.min_update_samples = 256
+        self.test_interval = 5000
+        self.episode_per_test = 20
+        self.save_interval = 10000
         
-        # Bigger buffer for more diverse training data, avoiding overfitting on small buffer
-        self.buffer_size = 10000  
+        # Device configuration
+        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         
-        self.max_total_steps = 5_000_000
-        
-        self.clone_interval = 1_000_000
-        
-        self.cutoff_steps = 150_000
-
-        self.test_interval = 5000  # Test every 1000 steps
-
-        # Regularization to prevent overfitting
-
-        # Improves generalization by penalizing large weights
-
-        # Helps stabilize training against noisy gradients
-        self.weight_decay = 1e-4
-        
-        # Curriculum learning stages
-        self.curriculum_stages = {
-            0: 0,               # Stage 0: RandomPolicy (0-10k steps)
-            5000: 1,           # Stage 1: HighestLeadSuitPolicy (10k-20k steps)
-            15000: 2,           # Stage 2: SimpleHeuristicPolicy (20k-30k steps)
-            30000: 3,           # Stage 3: AdvancedHeuristicPolicy (30k+ steps)
-            self.cutoff_steps: 4 # Stage 4: Self-play
+        # Learning rate schedule
+        self.lr_schedule = {
+            'milestones': [10000, 50000, 100000],
+            'gamma': 0.5
         }
